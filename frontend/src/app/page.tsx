@@ -1,64 +1,169 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useState } from 'react';
+
+interface Ingredient {
+  id: string;
+  name: string;
+  amount: string;
+  unit: string;
+}
+
+interface RecipePageProps {
+  params: {
+    id: string;
+  };
+}
+
+export default function RecipePage({ params }: RecipePageProps) {
+  const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Mock recipe data
+  const recipe = {
+    id: params.id,
+    title: 'Chocolate Chip Cookies',
+    prepTime: '15 mins',
+    cookTime: '12 mins',
+    servings: '24 cookies',
+    difficulty: 'Easy',
+    image: 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=800',
+    description:
+      'Classic homemade chocolate chip cookies with a soft and chewy texture. Perfect for any occasion!',
+    ingredients: [
+      { id: '1', name: 'All-purpose flour', amount: '2', unit: 'cups' },
+      { id: '2', name: 'Butter', amount: '1', unit: 'cup' },
+      { id: '3', name: 'Granulated sugar', amount: '0.75', unit: 'cup' },
+      { id: '4', name: 'Brown sugar', amount: '0.75', unit: 'cup' },
+      { id: '5', name: 'Eggs', amount: '2', unit: 'large' },
+      { id: '6', name: 'Vanilla extract', amount: '2', unit: 'tsp' },
+      { id: '7', name: 'Baking soda', amount: '1', unit: 'tsp' },
+      { id: '8', name: 'Salt', amount: '1', unit: 'tsp' },
+      { id: '9', name: 'Chocolate chips', amount: '2', unit: 'cups' },
+    ] as Ingredient[],
+    instructions: [
+      'Preheat oven to 375°F (190°C).',
+      'In a large bowl, cream together butter and both sugars until light and fluffy.',
+      'Beat in eggs one at a time, then stir in vanilla extract.',
+      'In another bowl, combine flour, baking soda, and salt.',
+      'Gradually blend the dry ingredients into the butter mixture.',
+      'Stir in chocolate chips.',
+      'Drop rounded tablespoons of dough onto ungreased cookie sheets.',
+      'Bake for 9-12 minutes or until golden brown.',
+      'Cool on baking sheets for 2 minutes, then transfer to wire racks.',
+    ],
+  };
+
+  const toggleIngredient = (id: string) => {
+    const newChecked = new Set(checkedIngredients);
+    if (newChecked.has(id)) {
+      newChecked.delete(id);
+    } else {
+      newChecked.add(id);
+    }
+    setCheckedIngredients(newChecked);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="max-w-4xl mx-auto px-4 py-8 bg-gray-50 min-h-screen">
+      {/* Header */}
+      <header className="mb-12">
+        <h1 className="text-4xl font-bold text-gray-900 mb-6">{recipe.title}</h1>
+        <img
+          src={recipe.image}
+          alt={recipe.title}
+          className="w-full h-96 object-cover rounded-lg shadow-md mb-6"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            hi bruh 
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <p className="text-lg text-gray-600 leading-relaxed mb-8">
+          {recipe.description}
+        </p>
+
+        {/* Recipe Info Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-lg shadow-sm text-center">
+            <span className="text-xs uppercase font-semibold text-gray-500 block mb-2">
+              Prep Time
+            </span>
+            <span className="text-2xl font-bold text-orange-600">
+              {recipe.prepTime}
+            </span>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm text-center">
+            <span className="text-xs uppercase font-semibold text-gray-500 block mb-2">
+              Cook Time
+            </span>
+            <span className="text-2xl font-bold text-orange-600">
+              {recipe.cookTime}
+            </span>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm text-center">
+            <span className="text-xs uppercase font-semibold text-gray-500 block mb-2">
+              Servings
+            </span>
+            <span className="text-2xl font-bold text-orange-600">
+              {recipe.servings}
+            </span>
+          </div>
+          <div className="bg-white p-4 rounded-lg shadow-sm text-center">
+            <span className="text-xs uppercase font-semibold text-gray-500 block mb-2">
+              Difficulty
+            </span>
+            <span className="text-2xl font-bold text-orange-600">
+              {recipe.difficulty}
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+
+      <main className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Ingredients Section */}
+        <section className="bg-white p-8 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Ingredients</h2>
+
+          <div className="space-y-3">
+            {recipe.ingredients.map((ingredient) => (
+              <label
+                key={ingredient.id}
+                className="flex items-center p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={checkedIngredients.has(ingredient.id)}
+                  onChange={() => toggleIngredient(ingredient.id)}
+                  className="w-5 h-5 accent-orange-600 cursor-pointer flex-shrink-0"
+                />
+                <span
+                  className={`ml-4 flex flex-col gap-1 ${
+                    checkedIngredients.has(ingredient.id)
+                      ? 'text-gray-400 line-through opacity-60'
+                      : 'text-gray-700'
+                  }`}
+                >
+                  <span className="font-semibold text-sm">
+                    {ingredient.amount} {ingredient.unit}
+                  </span>
+                  <span className="text-base">{ingredient.name}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* Instructions Section */}
+        <section className="bg-white p-8 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Instructions</h2>
+          <ol className="space-y-4 list-decimal list-inside">
+            {recipe.instructions.map((instruction, index) => (
+              <li
+                key={index}
+                className="text-gray-700 leading-relaxed marker:font-bold marker:text-orange-600"
+              >
+                {instruction}
+              </li>
+            ))}
+          </ol>
+        </section>
       </main>
     </div>
   );
