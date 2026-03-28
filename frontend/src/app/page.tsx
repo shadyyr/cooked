@@ -74,7 +74,6 @@ export default function RecipesLanding() {
 
   const difficulties = Array.from(new Set(recipes.map((r) => r.difficulty)));
 
-  // ✅ FIXED: Removed ease: 'easeOut' string
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -86,13 +85,12 @@ export default function RecipesLanding() {
     },
   };
 
-  // ✅ FIXED: Removed ease: 'easeOut' string
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.5 },  // Default easing is fine
+      transition: { duration: 0.5 },
     },
   };
 
@@ -152,7 +150,7 @@ export default function RecipesLanding() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search recipes, ingredients, or tags..."
+                placeholder="Search by recipes or tags..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-6 py-3 rounded-lg bg-slate-700 text-white placeholder-gray-400 border border-slate-600 focus:border-blue-400 outline-none transition"
@@ -223,7 +221,9 @@ export default function RecipesLanding() {
               <p className="text-xl text-gray-300">Loading recipes...</p>
             </motion.div>
           ) : filteredRecipes.length > 0 ? (
+            // FIX: Add key prop to force re-mount when filteredRecipes changes
             <motion.div
+              key={filteredRecipes.length}
               variants={containerVariants}
               initial="hidden"
               animate="visible"

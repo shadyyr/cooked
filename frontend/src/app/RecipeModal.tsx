@@ -56,6 +56,19 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
     return (num * factor).toFixed(2).replace(/\.?0+$/, '');
   };
 
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case 'Easy':
+        return 'bg-green-500/80 text-white';
+      case 'Medium':
+        return 'bg-yellow-500/80 text-white';
+      case 'Hard':
+        return 'bg-red-500/80 text-white';
+      default:
+        return 'bg-gray-500/80 text-white';
+    }
+  };
+
   if (!recipe) return null;
 
   return (
@@ -72,27 +85,28 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
             className="fixed inset-0 bg-black/50 z-40"
           />
 
-          {/* Modal */}
+          {/* Modal Container */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            transition={{ duration: 0.3 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             role="dialog"
             aria-modal="true"
           >
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              {/* Close Button */}
+            {/* Modal Content with Close Button */}
+            <div className="relative bg-gradient-to-b from-slate-800 to-slate-900 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-700">
+              {/* Close Button - Positioned relative to modal container */}
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onClose}
-                className="fixed top-6 right-6 z-50 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition"
+                className="absolute top-4 right-4 z-50 bg-slate-700 hover:bg-slate-600 rounded-full p-2 shadow-lg transition"
                 aria-label="Close modal"
               >
                 <svg
-                  className="w-6 h-6 text-gray-600"
+                  className="w-6 h-6 text-white"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -109,18 +123,12 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
               <div className="p-8">
                 {/* Header */}
                 <div className="mb-8">
-                  <div className="flex gap-4 mb-6">
-                    <h1 className="text-4xl font-bold text-gray-900">
+                  <div className="flex gap-4 mb-6 items-start">
+                    <h1 className="text-4xl font-bold text-white">
                       {recipe.title}
                     </h1>
                     <span
-                      className={`self-start px-4 py-2 rounded-full text-sm font-semibold ${
-                        recipe.difficulty === 'Easy'
-                          ? 'bg-green-100 text-green-800'
-                          : recipe.difficulty === 'Medium'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
+                      className={`self-start px-4 py-2 rounded-full text-sm font-semibold ${getDifficultyColor(recipe.difficulty)}`}
                     >
                       {recipe.difficulty}
                     </span>
@@ -135,11 +143,11 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                     className="w-full h-64 object-cover rounded-lg shadow-md mb-6"
                   />
 
-                  <p className="text-lg text-gray-600 leading-relaxed mb-6">
+                  <p className="text-lg text-gray-300 leading-relaxed mb-6">
                     {recipe.description}
                   </p>
 
-                  {/* Recipe Meta */}
+                  {/* Recipe Meta Grid */}
                   <div className="grid grid-cols-4 gap-4">
                     {[
                       { label: 'Prep Time', value: recipe.prepTime, icon: '⏱️' },
@@ -152,13 +160,13 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.15 + i * 0.05 }}
-                        className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-lg text-center border border-slate-200"
+                        className="bg-slate-700/50 border border-slate-600 hover:border-blue-400 p-4 rounded-lg text-center transition-colors"
                       >
                         <span className="text-2xl block mb-2">{item.icon}</span>
-                        <p className="text-xs uppercase font-semibold text-gray-500 mb-1">
+                        <p className="text-xs uppercase font-semibold text-gray-400 mb-1">
                           {item.label}
                         </p>
-                        <p className="text-lg font-bold text-gray-900">
+                        <p className="text-lg font-bold text-white">
                           {item.value}
                         </p>
                       </motion.div>
@@ -174,19 +182,19 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
                   >
-                    <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    <h2 className="text-2xl font-bold text-white mb-4">
                       Ingredients
                     </h2>
 
                     {/* Scale Control */}
-                    <div className="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
-                      <label className="text-sm font-semibold text-gray-700 block mb-2">
+                    <div className="mb-6 p-4 bg-orange-600/20 rounded-lg border border-orange-500/50">
+                      <label className="text-sm font-semibold text-gray-200 block mb-2">
                         Scale Recipe:
                       </label>
                       <select
                         value={scaleFactor}
                         onChange={(e) => setScaleFactor(parseFloat(e.target.value))}
-                        className="w-full px-3 py-2 border border-orange-200 rounded-lg focus:outline-none focus:border-orange-500"
+                        className="w-full px-3 py-2 border border-orange-500/50 rounded-lg focus:outline-none focus:border-orange-500 bg-slate-700 text-white"
                       >
                         <option value={0.5}>½x</option>
                         <option value={1}>1x</option>
@@ -202,7 +210,7 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: 0.25 + index * 0.03 }}
-                          className="flex items-center p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                          className="flex items-center p-3 rounded-lg hover:bg-slate-700/50 cursor-pointer transition-colors"
                         >
                           <input
                             type="checkbox"
@@ -213,8 +221,8 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                           <span
                             className={`ml-4 flex flex-col gap-0.5 ${
                               checkedIngredients.has(ingredient.id)
-                                ? 'text-gray-400 line-through opacity-60'
-                                : 'text-gray-700'
+                                ? 'text-gray-500 line-through opacity-50'
+                                : 'text-gray-300'
                             }`}
                           >
                             <span className="font-semibold text-sm">
@@ -231,7 +239,7 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => setCheckedIngredients(new Set())}
-                      className="mt-4 w-full px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                      className="mt-4 w-full px-4 py-2 text-sm text-gray-300 border border-slate-600 rounded-lg hover:bg-slate-700/50 transition"
                     >
                       Reset Checklist
                     </motion.button>
@@ -243,7 +251,7 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.2 }}
                   >
-                    <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    <h2 className="text-2xl font-bold text-white mb-4">
                       Instructions
                     </h2>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -256,14 +264,14 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                           onClick={() => setCurrentStep(index)}
                           className={`p-4 rounded-lg cursor-pointer transition-all border-l-4 ${
                             currentStep === index
-                              ? 'bg-orange-50 border-orange-600'
-                              : 'bg-gray-50 border-transparent hover:bg-gray-100'
+                              ? 'bg-orange-600/20 border-orange-600 border-slate-600'
+                              : 'bg-slate-700/30 border-transparent hover:bg-slate-700/50 border-slate-600'
                           }`}
                         >
-                          <span className="font-bold text-orange-600 mr-3">
+                          <span className="font-bold text-orange-500 mr-3">
                             Step {index + 1}
                           </span>
-                          <span className="text-gray-700 text-sm">
+                          <span className="text-gray-300 text-sm">
                             {instruction}
                           </span>
                         </motion.div>
@@ -278,16 +286,16 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.4 }}
-                    className="mt-8 pt-6 border-t border-gray-200"
+                    className="mt-8 pt-6 border-t border-slate-700"
                   >
-                    <p className="text-sm font-semibold text-gray-700 mb-3">
+                    <p className="text-sm font-semibold text-gray-300 mb-3">
                       Tags:
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {recipe.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium"
+                          className="inline-block bg-blue-600/20 text-blue-300 px-3 py-1 rounded-full text-sm font-medium border border-blue-600/50"
                         >
                           {tag}
                         </span>
