@@ -2,22 +2,26 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { Recipe } from './recipe';
 import { 
   getRecipes, 
   searchRecipes, 
-  filterByDifficulty 
+  filterByDifficulty,
+  getRecipeById
 } from './recipe-service';
+import RecipeModal from './RecipeModal';
 
 export default function RecipesLanding() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(
-    null
-  );
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
+  
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoadingRecipe, setIsLoadingRecipe] = useState(false);
 
-  // Fetch recipes on component mount
   useEffect(() => {
     const fetchRecipes = async () => {
       try {
@@ -34,7 +38,26 @@ export default function RecipesLanding() {
     fetchRecipes();
   }, []);
 
-  // Filter recipes based on search and difficulty
+  const handleRecipeClick = async (recipe: Recipe) => {
+    try {
+      setIsLoadingRecipe(true);
+      const fullRecipe = await getRecipeById(recipe.id);
+      if (fullRecipe) {
+        setSelectedRecipe(fullRecipe);
+        setIsModalOpen(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch recipe details:', error);
+    } finally {
+      setIsLoadingRecipe(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setTimeout(() => setSelectedRecipe(null), 300);
+  };
+
   const filteredRecipes = useMemo(() => {
     let results = recipes;
 
@@ -51,40 +74,81 @@ export default function RecipesLanding() {
 
   const difficulties = Array.from(new Set(recipes.map((r) => r.difficulty)));
 
+  // ✅ FIXED: Removed ease: 'easeOut' string
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2,
+      },
+    },
+  };
+
+  // ✅ FIXED: Removed ease: 'easeOut' string
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.5 },  // Default easing is fine
+    },
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* Navigation */}
-      <nav className="fixed w-full top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-700">
+      <motion.nav
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="fixed w-full top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700"
+      >
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Cooked!</h1>
+          <h1 className="text-2xl font-bold">Cooked !</h1>
           <div className="flex gap-6 items-center">
             <Link href="#recipes" className="hover:text-blue-400 transition">
               Recipes
             </Link>
-            <button className="bg-blue-600 px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="bg-blue-600 px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
               Share Recipe
-            </button>
+            </motion.button>
           </div>
         </div>
-      </nav>
+      </motion.nav>
 
       {/* Hero Section */}
       <section className="pt-32 pb-16 px-4">
-        <div className="max-w-4xl mx-auto text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="max-w-4xl mx-auto text-center"
+        >
           <h2 className="text-5xl md:text-6xl font-bold mb-6">
             Discover What's Possible
           </h2>
           <p className="text-xl text-gray-300 mb-8">
             Explore delicious recipes, scale ingredients, and create culinary masterpieces
           </p>
-        </div>
+        </motion.div>
       </section>
 
       {/* Search & Filter Section */}
       <section id="recipes" className="py-12 px-4 bg-slate-800/50">
         <div className="max-w-7xl mx-auto">
           {/* Search Bar */}
-          <div className="mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="mb-8"
+          >
             <div className="relative">
               <input
                 type="text"
@@ -95,10 +159,15 @@ export default function RecipesLanding() {
               />
               <span className="absolute right-4 top-3 text-gray-400">🔍</span>
             </div>
-          </div>
+          </motion.div>
 
           {/* Difficulty Filter */}
-          <div className="flex flex-wrap gap-2 items-center mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="flex flex-wrap gap-2 items-center mb-8"
+          >
             <span className="text-sm font-semibold text-gray-300">
               Filter by difficulty:
             </span>
@@ -113,8 +182,10 @@ export default function RecipesLanding() {
               All
             </button>
             {difficulties.map((difficulty) => (
-              <button
+              <motion.button
                 key={difficulty}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedDifficulty(difficulty)}
                 className={`px-4 py-2 rounded-lg transition ${
                   selectedDifficulty === difficulty
@@ -123,15 +194,19 @@ export default function RecipesLanding() {
                 }`}
               >
                 {difficulty}
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
 
           {/* Results Count */}
           {!isLoading && (
-            <p className="text-sm text-gray-400 mb-6">
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-sm text-gray-400 mb-6"
+            >
               Showing {filteredRecipes.length} of {recipes.length} recipes
-            </p>
+            </motion.p>
           )}
         </div>
       </section>
@@ -140,27 +215,48 @@ export default function RecipesLanding() {
       <section className="py-16 px-4">
         <div className="max-w-7xl mx-auto">
           {isLoading ? (
-            <div className="text-center py-16">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-16"
+            >
               <p className="text-xl text-gray-300">Loading recipes...</p>
-            </div>
+            </motion.div>
           ) : filteredRecipes.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
               {filteredRecipes.map((recipe) => (
-                <Link
+                <motion.div
                   key={recipe.id}
-                  href={`/recipes/${recipe.id}`}
-                  className="group"
+                  variants={itemVariants}
+                  onClick={() => handleRecipeClick(recipe)}
+                  className="cursor-pointer"
                 >
-                  <div className="bg-slate-700/50 rounded-lg overflow-hidden border border-slate-600 hover:border-blue-400 transition-all hover:transform hover:scale-105">
+                  <motion.div
+                    whileHover={{ scale: 1.05, translateY: -5 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-slate-700/50 rounded-lg overflow-hidden border border-slate-600 hover:border-blue-400 transition-all"
+                  >
                     {/* Recipe Image */}
                     <div className="relative h-48 overflow-hidden bg-slate-800">
-                      <img
+                      <motion.img
+                        whileHover={{ scale: 1.1 }}
+                        transition={{ duration: 0.3 }}
                         src={recipe.image}
                         alt={recipe.title}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                        className="w-full h-full object-cover"
                       />
                       {/* Difficulty Badge */}
-                      <div className="absolute top-3 right-3">
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.2 }}
+                        className="absolute top-3 right-3"
+                      >
                         <span
                           className={`px-3 py-1 rounded-full text-sm font-semibold ${
                             recipe.difficulty === 'Easy'
@@ -172,7 +268,7 @@ export default function RecipesLanding() {
                         >
                           {recipe.difficulty}
                         </span>
-                      </div>
+                      </motion.div>
                     </div>
 
                     {/* Recipe Info */}
@@ -187,19 +283,19 @@ export default function RecipesLanding() {
                       {/* Recipe Meta */}
                       <div className="grid grid-cols-3 gap-3 mb-4 text-center text-sm">
                         <div>
-                          <span className="text-gray-400">⏱️</span>
+                          <span className="text-gray-400">Prep Time: </span>
                           <p className="text-xs text-gray-400 mt-1">
                             {recipe.prepTime}
                           </p>
                         </div>
                         <div>
-                          <span className="text-gray-400">🔥</span>
+                          <span className="text-gray-400">Cook Time: </span>
                           <p className="text-xs text-gray-400 mt-1">
                             {recipe.cookTime}
                           </p>
                         </div>
                         <div>
-                          <span className="text-gray-400">🍽️</span>
+                          <span className="text-gray-400">Servings: </span>
                           <p className="text-xs text-gray-400 mt-1">
                             {recipe.servings}
                           </p>
@@ -225,16 +321,22 @@ export default function RecipesLanding() {
                         </div>
                       )}
                     </div>
-                  </div>
-                </Link>
+                  </motion.div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           ) : (
-            <div className="text-center py-16">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-16"
+            >
               <p className="text-xl text-gray-400 mb-4">
                 No recipes found matching your search
               </p>
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => {
                   setSearchQuery('');
                   setSelectedDifficulty(null);
@@ -242,31 +344,40 @@ export default function RecipesLanding() {
                 className="text-blue-400 hover:text-blue-300 transition"
               >
                 Clear filters
-              </button>
-            </div>
+              </motion.button>
+            </motion.div>
           )}
         </div>
       </section>
 
       {/* Footer CTA */}
-      <section className="py-16 px-4 bg-blue-600">
+      <motion.section
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        transition={{ duration: 0.6 }}
+        className="py-16 px-4 bg-blue-600"
+      >
         <div className="max-w-4xl mx-auto text-center">
           <h3 className="text-3xl font-bold mb-4">Have a Recipe to Share?</h3>
           <p className="text-lg mb-8 text-blue-100">
             Contribute your favorite recipes to our growing collection
           </p>
-          <button className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-bold hover:bg-gray-100 transition">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-bold hover:bg-gray-100 transition"
+          >
             Submit a Recipe
-          </button>
+          </motion.button>
         </div>
-      </section>
+      </motion.section>
 
-      {/* Footer */}
-      <footer className="bg-slate-900 border-t border-slate-700 py-8 px-4">
-        <div className="max-w-7xl mx-auto text-center text-gray-400">
-          <p>&copy; 2026 RecipeHub. All rights reserved.</p>
-        </div>
-      </footer>
+      {/* Recipe Modal */}
+      <RecipeModal
+        recipe={selectedRecipe}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }
