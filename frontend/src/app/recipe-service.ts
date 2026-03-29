@@ -23,24 +23,32 @@ import { mockRecipes } from './mockRecipes';
 
 interface FetchRecipesOptions {
   search?: string;
-  difficulty?: string;
 }
 
 interface BackendRecipe {
+  id?: string;
   recipe_name: string;
+  description?: string;
   ingredients: {
     [key: string]: string;
   };
-  instructions?: string[];
+  instructions?: string[] | string;
   image_url?: string;
-  prep_time?: string;
-  cook_time?: string;
-  servings?: string;
-  difficulty?: string;
-  tags?: string[];
+  youtube_url?: string;
+  missing_details?: Array<{ ingredient: string; needed: string }>;
+  missing?: string[];
+  insufficient?: Array<{ ingredient: string; needed: string; have: string }>;
+  match_percent?: number;
   score?: number;
   source?: string;
 }
+
+const RECIPE_META_KEYS = new Set([
+  'image_url',
+  'youtube_url',
+  'description',
+  'instructions',
+]);
 
 /**
  * Converts a backend recipe response into the frontend Recipe format
@@ -51,18 +59,19 @@ function convertBackendRecipeToFrontend(
   index: number
 ): Recipe {
   // Convert ingredients object to Ingredient array
-  const ingredients = Object.entries(backendRecipe.ingredients).map(
-    ([name, quantity], ingIndex) => ({
+  const ingredientEntries = Object.entries(backendRecipe.ingredients).filter(
+    ([name]) => !RECIPE_META_KEYS.has(name)
+  );
+  const ingredients = ingredientEntries.map(([name, quantity], ingIndex) => ({
       id: `${index}-ing-${ingIndex}`,
       name: capitalizeWords(name),
       amount: extractAmount(quantity),
       unit: extractUnit(quantity),
-    })
-  );
+    }));
 
   // Handle instructions - can be array or string with newlines
   let instructions: string[] = [];
-  /*if (Array.isArray(backendRecipe.instructions)) {
+  if (Array.isArray(backendRecipe.instructions)) {
     instructions = backendRecipe.instructions
       .map((step) => step.trim())
       .filter((step) => step.length > 0);
@@ -71,47 +80,55 @@ function convertBackendRecipeToFrontend(
       .split('\n')
       .map((step) => step.trim())
       .filter((step) => step.length > 0);
-  }*/
+  }
+
+  // Remove empty step headers like "Step 1" and strip prefixes like "STEP 2 - "
+  instructions = instructions
+    .map((step) => step.replace(/^step\s*\d+\s*[:.\-]?\s*/i, '').trim())
+    .filter((step) => step.length > 0);
 
   // Ensure we have at least some instructions
   if (instructions.length === 0) {
     instructions = [
-      'Prepare all ingredients.',
-      'Follow standard cooking procedures.',
-      'Adjust seasonings to taste.',
-      'Serve and enjoy!',
+      'Prepare all ingredients and equipment.',
+      'Follow the recipe method step by step.',
+      'Adjust seasoning to taste and serve.',
     ];
   }
 
-  // Determine difficulty level
-  let difficulty: 'Easy' | 'Medium' | 'Hard' = 'Easy';
-  if (backendRecipe.difficulty) {
-    const diff = backendRecipe.difficulty.toLowerCase();
-    if (diff.includes('hard') || diff.includes('advanced') || diff === '3') {
-      difficulty = 'Hard';
-    } else if (diff.includes('medium') || diff.includes('intermediate') || diff === '2') {
-      difficulty = 'Medium';
-    }
-  }
-
   // Generate recipe ID
-  const recipeId = backendRecipe.recipe_name
+  const recipeId = (backendRecipe.id || backendRecipe.recipe_name)
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '');
 
+  const matchPercent =
+    typeof backendRecipe.match_percent === 'number'
+      ? backendRecipe.match_percent
+      : Math.round((backendRecipe.score || 0) * 1000) / 10;
+  const insufficientIngredients =
+    (backendRecipe.insufficient || []).map((item) => item.ingredient) || [];
+  const missingFromDetails =
+    (backendRecipe.missing_details || []).map((item) => item.ingredient) || [];
+  const missingIngredients = Array.from(
+    new Set([...(backendRecipe.missing || []), ...missingFromDetails, ...insufficientIngredients])
+  );
+
   return {
     id: recipeId,
     title: capitalizeWords(backendRecipe.recipe_name),
-    description: `A delicious ${backendRecipe.recipe_name.toLowerCase()} recipe with ${ingredients.length} ingredients.`,
+    description:
+      backendRecipe.description ||
+      `A delicious ${backendRecipe.recipe_name.toLowerCase()} recipe with ${ingredients.length} ingredients.`,
     image:
       backendRecipe.image_url ||
       getPlaceholderImage(index),
-    prepTime: backendRecipe.prep_time || 'Unknown',
-    cookTime: backendRecipe.cook_time || 'Unknown',
-    servings: backendRecipe.servings || '4 servings',
-    difficulty,
-    tags: backendRecipe.tags || [],
+    matchPercent,
+    missingIngredients,
+    missingDetails: backendRecipe.missing_details || [],
+    insufficientDetails: backendRecipe.insufficient || [],
+    youtubeUrl: backendRecipe.youtube_url || undefined,
+    source: backendRecipe.source || 'backend',
     ingredients,
     instructions,
   };
@@ -225,10 +242,35 @@ export async function getRecipes(
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-    // For initial page load without ingredients, return fallback recipes
+    // For initial page load without ingredients, fetch backend fallback catalog
     if (!options?.search) {
-      console.log('No search query provided. Using fallback recipes.');
-      return mockRecipes;
+      const response = await fetch(`${apiUrl}/api/recipes/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ingredients: [],
+          limit: 50,
+          min_match_score: 0,
+        }),
+      });
+
+      if (!response.ok) {
+        console.log('Backend unavailable on initial load. Using frontend mock fallback.');
+        return mockRecipes;
+      }
+
+      const data = await response.json();
+      const backendRecipes: BackendRecipe[] = data.recipes || [];
+      if (backendRecipes.length === 0) {
+        console.log('Backend returned no initial recipes. Using frontend mock fallback.');
+        return mockRecipes;
+      }
+
+      return backendRecipes.map((recipe, index) =>
+        convertBackendRecipeToFrontend(recipe, index)
+      );
     }
 
     const response = await fetch(`${apiUrl}/api/recipes/search`, {
@@ -239,6 +281,7 @@ export async function getRecipes(
       body: JSON.stringify({
         ingredients: [options.search],
         limit: 12,
+        min_match_score: 0,
       }),
     });
 
@@ -302,8 +345,8 @@ export async function fetchRecipesByIngredients(
 ): Promise<Recipe[]> {
   try {
     if (ingredients.length === 0) {
-      console.log('No ingredients provided. Using fallback recipes.');
-      return mockRecipes;
+      console.log('No ingredients provided. Loading backend default recipes.');
+      return getRecipes();
     }
 
     // Simulate API delay for development (optional)
@@ -311,8 +354,12 @@ export async function fetchRecipesByIngredients(
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-    // Extract just the ingredient names for the backend
-    const ingredientNames = ingredients.map((ing) => ing.ingredient);
+    // Send full ingredient payload (name + quantity + unit) to backend
+    const ingredientPayload = ingredients.map((ing) => ({
+      ingredient: ing.ingredient,
+      quantity: ing.quantity,
+      unit: ing.unit,
+    }));
 
     const response = await fetch(`${apiUrl}/api/recipes/search`, {
       method: 'POST',
@@ -320,8 +367,9 @@ export async function fetchRecipesByIngredients(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ingredients: ingredientNames,
+        ingredients: ingredientPayload,
         limit: 12,
+        min_match_score: 0,
       }),
     });
 
@@ -338,7 +386,9 @@ export async function fetchRecipesByIngredients(
     // If no recipes found from API, use fallback recipes
     if (backendRecipes.length === 0) {
       console.log(
-        `No recipes found from backend API for ingredients: ${ingredientNames.join(', ')}. Using fallback recipes.`
+        `No recipes found from backend API for ingredients: ${ingredientPayload
+          .map((x) => x.ingredient)
+          .join(', ')}. Using fallback recipes.`
       );
       return mockRecipes;
     }
@@ -349,8 +399,13 @@ export async function fetchRecipesByIngredients(
     );
 
     const source = data.source || 'backend';
+    if (data.debug) {
+      console.log('Backend debug:', data.debug);
+    }
     console.log(
-      `Fetched ${recipes.length} recipes for ingredients: ${ingredientNames.join(', ')} from ${source}`
+      `Fetched ${recipes.length} recipes for ingredients: ${ingredientPayload
+        .map((x) => x.ingredient)
+        .join(', ')} from ${source}`
     );
     return recipes;
   } catch (error) {
@@ -426,7 +481,6 @@ export function searchRecipes(
     const matchesSearch =
       recipe.title.toLowerCase().includes(lowerQuery) ||
       recipe.description.toLowerCase().includes(lowerQuery) ||
-      recipe.tags?.some((tag) => tag.toLowerCase().includes(lowerQuery)) ||
       recipe.ingredients?.some((ing) =>
         ing.name.toLowerCase().includes(lowerQuery)
       );
@@ -435,13 +489,3 @@ export function searchRecipes(
   });
 }
 
-/**
- * Filters recipes by difficulty level
- */
-export function filterByDifficulty(
-  recipes: Recipe[],
-  difficulty: string | null
-): Recipe[] {
-  if (!difficulty) return recipes;
-  return recipes.filter((recipe) => recipe.difficulty === difficulty);
-}

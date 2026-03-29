@@ -7,7 +7,6 @@ import { Recipe } from './recipe';
 import { 
   getRecipes, 
   searchRecipes, 
-  filterByDifficulty,
   getRecipeById,
   fetchRecipesByIngredients
 } from './recipe-service';
@@ -25,7 +24,6 @@ export default function RecipesLanding() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
   
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,6 +33,7 @@ export default function RecipesLanding() {
   const [isIngredientModalOpen, setIsIngredientModalOpen] = useState(false);
   const [addedIngredients, setAddedIngredients] = useState<AddedIngredient[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
+  const [editingIngredient, setEditingIngredient] = useState<AddedIngredient | null>(null);
 
   // Load initial recipes (fallback) on mount
   useEffect(() => {
@@ -75,17 +74,28 @@ export default function RecipesLanding() {
 
   const handleCloseIngredientModal = () => {
     setIsIngredientModalOpen(false);
+    setEditingIngredient(null);
   };
 
   // When a new ingredient is added, fetch updated recipes
   const handleAddIngredient = async (ingredient: AddedIngredient) => {
-    // Add ingredient to list
-    const updatedIngredients = [...addedIngredients, ingredient];
+    // Upsert ingredient in list (supports edit flow)
+    const existingIndex = addedIngredients.findIndex((ing) => ing.id === ingredient.id);
+    const updatedIngredients =
+      existingIndex >= 0
+        ? addedIngredients.map((ing) => (ing.id === ingredient.id ? ingredient : ing))
+        : [...addedIngredients, ingredient];
     setAddedIngredients(updatedIngredients);
 
     // Fetch recipes based on all added ingredients
-    console.log(`Ingredient added: ${ingredient.ingredient}. Fetching updated recipes...`);
+    const actionLabel = existingIndex >= 0 ? 'updated' : 'added';
+    console.log(`Ingredient ${actionLabel}: ${ingredient.ingredient}. Fetching updated recipes...`);
     await fetchUpdatedRecipes(updatedIngredients);
+  };
+
+  const handleEditIngredient = (ingredient: AddedIngredient) => {
+    setEditingIngredient(ingredient);
+    setIsIngredientModalOpen(true);
   };
 
   // Fetch recipes based on current added ingredients
@@ -130,14 +140,8 @@ export default function RecipesLanding() {
       results = searchRecipes(results, searchQuery);
     }
 
-    if (selectedDifficulty) {
-      results = filterByDifficulty(results, selectedDifficulty);
-    }
-
     return results;
-  }, [recipes, searchQuery, selectedDifficulty]);
-
-  const difficulties = Array.from(new Set(recipes.map((r) => r.difficulty)));
+  }, [recipes, searchQuery]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -169,7 +173,7 @@ export default function RecipesLanding() {
         className="fixed w-full top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700"
       >
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Cooked !</h1>
+          <h1 className="text-2xl font-bold">Cooked!</h1>
           <div className="flex gap-6 items-center">
             <Link href="#recipes" className="hover:text-blue-400 transition">
               Recipes
@@ -202,7 +206,7 @@ export default function RecipesLanding() {
         </motion.div>
       </section>
 
-      {/* Search & Filter Section */}
+      {/* Search Section */}
       <section id="recipes" className="py-12 px-4 bg-slate-800/50">
         <div className="max-w-7xl mx-auto">
           {/* Search Bar */}
@@ -215,7 +219,7 @@ export default function RecipesLanding() {
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search by recipes or tags..."
+                placeholder="Search recipes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-6 py-3 rounded-lg bg-slate-700 text-white placeholder-gray-400 border border-slate-600 focus:border-blue-400 outline-none transition"
@@ -224,47 +228,20 @@ export default function RecipesLanding() {
             </div>
           </motion.div>
 
-          {/* Difficulty Filter and Add Ingredient Button */}
+          {/* Add Ingredient Button */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.15 }}
-            className="flex flex-wrap gap-2 items-center mb-8"
+            className="flex items-center mb-8"
           >
-            <span className="text-sm font-semibold text-gray-300">
-              Filter by difficulty:
-            </span>
-            <button
-              onClick={() => setSelectedDifficulty(null)}
-              className={`px-4 py-2 rounded-lg transition ${
-                selectedDifficulty === null
-                  ? 'bg-blue-600'
-                  : 'bg-slate-700 hover:bg-slate-600'
-              }`}
-            >
-              All
-            </button>
-            {difficulties.map((difficulty) => (
-              <motion.button
-                key={difficulty}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedDifficulty(difficulty)}
-                className={`px-4 py-2 rounded-lg transition ${
-                  selectedDifficulty === difficulty
-                    ? 'bg-blue-600'
-                    : 'bg-slate-700 hover:bg-slate-600'
-                }`}
-              >
-                {difficulty}
-              </motion.button>
-            ))}
-
-            {/* Add Ingredient Button */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setIsIngredientModalOpen(true)}
+              onClick={() => {
+                setEditingIngredient(null);
+                setIsIngredientModalOpen(true);
+              }}
               className="ml-auto px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition font-semibold"
             >
               + Add Ingredient
@@ -289,7 +266,9 @@ export default function RecipesLanding() {
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="inline-flex items-center gap-2 bg-orange-600/20 border border-orange-600/50 text-orange-300 px-3 py-2 rounded-full text-sm font-medium hover:bg-orange-600/30 transition group"
+                    className="inline-flex items-center gap-2 bg-orange-600/20 border border-orange-600/50 text-orange-300 px-3 py-2 rounded-full text-sm font-medium hover:bg-orange-600/30 transition group cursor-pointer"
+                    onClick={() => handleEditIngredient(ingredient)}
+                    title="Click to edit ingredient"
                   >
                     <span>
                       {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
@@ -297,7 +276,10 @@ export default function RecipesLanding() {
                     <motion.button
                       whileHover={{ scale: 1.2 }}
                       whileTap={{ scale: 0.9 }}
-                      onClick={() => handleRemoveIngredient(ingredient.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveIngredient(ingredient.id);
+                      }}
                       className="ml-1 text-orange-400 hover:text-orange-200 transition opacity-0 group-hover:opacity-100"
                       aria-label="Remove ingredient"
                     >
@@ -367,7 +349,7 @@ export default function RecipesLanding() {
                         alt={recipe.title}
                         className="w-full h-full object-cover"
                       />
-                      {/* Difficulty Badge */}
+                      {/* Match Badge */}
                       <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -375,15 +357,9 @@ export default function RecipesLanding() {
                         className="absolute top-3 right-3"
                       >
                         <span
-                          className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                            recipe.difficulty === 'Easy'
-                              ? 'bg-green-500/80'
-                              : recipe.difficulty === 'Medium'
-                              ? 'bg-yellow-500/80'
-                              : 'bg-red-500/80'
-                          }`}
+                          className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-600/85"
                         >
-                          {recipe.difficulty}
+                          {Math.round(recipe.matchPercent)}% match
                         </span>
                       </motion.div>
                     </div>
@@ -397,45 +373,25 @@ export default function RecipesLanding() {
                         {recipe.description}
                       </p>
 
-                      {/* Recipe Meta */}
-                      <div className="grid grid-cols-3 gap-3 mb-4 text-center text-sm">
-                        <div>
-                          <span className="text-gray-400">Prep Time: </span>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {recipe.prepTime}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Cook Time: </span>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {recipe.cookTime}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">Servings: </span>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {recipe.servings}
-                          </p>
-                        </div>
-                      </div>
+                      {recipe.missingIngredients.length > 0 ? (
+                        <p className="text-xs text-amber-300 mt-2">
+                          Missing: {recipe.missingIngredients.slice(0, 4).join(', ')}
+                          {recipe.missingIngredients.length > 4 ? '...' : ''}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-emerald-300 mt-2">No missing ingredients</p>
+                      )}
 
-                      {/* Tags */}
-                      {recipe.tags && recipe.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {recipe.tags.slice(0, 2).map((tag) => (
-                            <span
-                              key={tag}
-                              className="text-xs bg-blue-600/20 text-blue-300 px-2 py-1 rounded border border-blue-600/50"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                          {recipe.tags.length > 2 && (
-                            <span className="text-xs text-gray-400">
-                              +{recipe.tags.length - 2} more
-                            </span>
-                          )}
-                        </div>
+                      {recipe.youtubeUrl && (
+                        <a
+                          href={recipe.youtubeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-block mt-3 text-sm text-red-300 hover:text-red-200 underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Watch on YouTube
+                        </a>
                       )}
                     </div>
                   </motion.div>
@@ -456,7 +412,6 @@ export default function RecipesLanding() {
                 whileTap={{ scale: 0.95 }}
                 onClick={() => {
                   setSearchQuery('');
-                  setSelectedDifficulty(null);
                 }}
                 className="text-blue-400 hover:text-blue-300 transition"
               >
@@ -500,6 +455,7 @@ export default function RecipesLanding() {
       <IngredientModal
         isOpen={isIngredientModalOpen}
         onClose={handleCloseIngredientModal}
+        editingIngredient={editingIngredient}
         onAddIngredient={handleAddIngredient}
       />
     </div>

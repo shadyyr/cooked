@@ -19,6 +19,8 @@ export const mockRecipes: Recipe[] = [
       'Classic homemade chocolate chip cookies with a soft and chewy texture. Perfect for any occasion!',
     image:
       'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?w=800',
+    matchPercent: 0,
+    missingIngredients: [],
     prepTime: '15 mins',
     cookTime: '12 mins',
     servings: '24 cookies',
@@ -54,6 +56,8 @@ export const mockRecipes: Recipe[] = [
       'Authentic Italian pasta with creamy egg sauce, crispy guanciale, and Pecorino Romano cheese.',
     image:
       'https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=800',
+    matchPercent: 0,
+    missingIngredients: [],
     prepTime: '10 mins',
     cookTime: '20 mins',
     servings: '4 servings',
@@ -84,6 +88,8 @@ export const mockRecipes: Recipe[] = [
       'Impressive beef tenderloin wrapped in mushroom duxelles and flaky puff pastry.',
     image:
       'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800',
+    matchPercent: 0,
+    missingIngredients: [],
     prepTime: '45 mins',
     cookTime: '45 mins',
     servings: '4-6 servings',
@@ -114,6 +120,8 @@ export const mockRecipes: Recipe[] = [
       'Fresh Mediterranean salad with crisp vegetables, feta cheese, and Kalamata olives.',
     image:
       'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800',
+    matchPercent: 0,
+    missingIngredients: [],
     prepTime: '15 mins',
     cookTime: '0 mins',
     servings: '4 servings',
@@ -143,6 +151,8 @@ export const mockRecipes: Recipe[] = [
       'Silky noodles in a rich tonkotsu broth with soft-boiled eggs and tender chashu pork.',
     image:
       'https://images.unsplash.com/photo-1564621592915-38bea6a6a7f1?w=800',
+    matchPercent: 0,
+    missingIngredients: [],
     prepTime: '30 mins',
     cookTime: '180 mins',
     servings: '2 servings',

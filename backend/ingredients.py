@@ -11,6 +11,10 @@ CURATED_COMMON_INGREDIENTS = {
 }
 
 API_SEEN_INGREDIENTS = set()
+INGREDIENT_FREQUENCY = {}
+
+VALID_SCORE_THRESHOLD = 0.50
+SUSPICIOUS_SCORE_THRESHOLD = 0.20
 
 # Mapping for plural to singular forms
 PLURAL_MAP = {
@@ -98,11 +102,71 @@ def get_ingredient_vocabulary(fallback_recipes):
             fallback_ingredients.add(normalize_ingredient(ing))
     curated = {normalize_ingredient(x) for x in CURATED_COMMON_INGREDIENTS}
     api_seen = {normalize_ingredient(x) for x in API_SEEN_INGREDIENTS}
-    return fallback_ingredients | curated | api_seen
+    observed = {normalize_ingredient(x) for x in INGREDIENT_FREQUENCY.keys()}
+    return fallback_ingredients | curated | api_seen | observed
+
+
+def get_fallback_ingredient_counts(fallback_recipes):
+    counts = {}
+    for requirements in fallback_recipes.values():
+        for ing in requirements.keys():
+            normalized = normalize_ingredient(ing)
+            counts[normalized] = counts.get(normalized, 0) + 1
+    return counts
+
+
+def record_ingredient_observation(ingredient_text):
+    normalized = normalize_ingredient(ingredient_text)
+    INGREDIENT_FREQUENCY[normalized] = INGREDIENT_FREQUENCY.get(normalized, 0) + 1
+    return INGREDIENT_FREQUENCY[normalized]
 
 def suggest_ingredient_correction(ingredient_text, fallback_recipes):
     vocabulary = sorted(get_ingredient_vocabulary(fallback_recipes))
     return find_best_text_match(ingredient_text, vocabulary, max_dist_short=1, max_dist_long=2)
+
+
+def get_api_hit_count_signal(normalized_ingredient):
+    """
+    Tries to use cached API info first, then a live hit count lookup.
+    Returns None when unavailable.
+    """
+    try:
+        # Local import avoids circular import at module load time.
+        from api import get_api_hit_count_for_ingredient
+        return get_api_hit_count_for_ingredient(normalized_ingredient)
+    except Exception:
+        return None
+
+
+def compute_ingredient_confidence(normalized, fallback_recipes):
+    fallback_counts = get_fallback_ingredient_counts(fallback_recipes)
+    fallback_count = fallback_counts.get(normalized, 0)
+    curated = normalized in {normalize_ingredient(x) for x in CURATED_COMMON_INGREDIENTS}
+    api_seen = normalized in API_SEEN_INGREDIENTS
+    observed_count = INGREDIENT_FREQUENCY.get(normalized, 0)
+    api_hits = get_api_hit_count_signal(normalized)
+
+    fallback_signal = min(fallback_count / 3.0, 1.0)
+    observed_signal = min(observed_count / 5.0, 1.0)
+    api_signal = min((api_hits or 0) / 10.0, 1.0) if api_hits is not None else 0.0
+
+    score = 0.0
+    if curated:
+        score += 0.30
+    score += 0.25 * fallback_signal
+    if api_seen:
+        score += 0.15
+    score += 0.15 * observed_signal
+    score += 0.15 * api_signal
+
+    score = max(0.0, min(1.0, score))
+    return score, {
+        "curated": curated,
+        "fallback_count": fallback_count,
+        "api_seen": api_seen,
+        "observed_count": observed_count,
+        "api_hit_count": api_hits,
+    }
 
 
 def assess_ingredient_confidence(ingredient_text, fallback_recipes):
@@ -122,20 +186,38 @@ def assess_ingredient_confidence(ingredient_text, fallback_recipes):
 
     normalized = normalize_ingredient(ingredient_text)
     vocabulary = get_ingredient_vocabulary(fallback_recipes)
-    if normalized in vocabulary:
+    score, signals = compute_ingredient_confidence(normalized, fallback_recipes)
+    suggestion = suggest_ingredient_correction(normalized, fallback_recipes)
+    in_vocab = normalized in vocabulary
+
+    if in_vocab and score >= VALID_SCORE_THRESHOLD:
         return {
             "status": "valid",
             "normalized": normalized,
             "reason": None,
             "suggestion": None,
+            "confidence_score": score,
+            "signals": signals,
         }
 
-    suggestion = suggest_ingredient_correction(normalized, fallback_recipes)
+    if score < SUSPICIOUS_SCORE_THRESHOLD and not in_vocab:
+        reason = (
+            f"Low confidence ingredient ({score:.2f}). It does not appear in curated, fallback, "
+            "or API-observed ingredient vocab."
+        )
+    else:
+        reason = (
+            f"Ingredient looks syntactically valid but has moderate confidence ({score:.2f}) "
+            "in known ingredient behavior."
+        )
+
     return {
         "status": "suspicious",
         "normalized": normalized,
-        "reason": "Ingredient looks syntactically valid but is uncommon in known recipes.",
+        "reason": reason,
         "suggestion": suggestion if suggestion != normalized else None,
+        "confidence_score": score,
+        "signals": signals,
     }
 
 
@@ -160,8 +242,15 @@ def resolve_ingredient_input_with_guidance(raw_ingredient, fallback_recipes, pro
             continue
 
         suggestion = assessment["suggestion"]
+        confidence = assessment.get("confidence_score")
         if suggestion:
-            print(f"'{ingredient}' looks uncommon. Did you mean '{suggestion}'?")
+            if confidence is None:
+                print(f"'{ingredient}' looks uncommon. Did you mean '{suggestion}'?")
+            else:
+                print(
+                    f"'{ingredient}' looks uncommon (confidence {confidence:.2f}). "
+                    f"Did you mean '{suggestion}'?"
+                )
             choice = input("[Y]es use suggestion, [K]eep as entered, [R]e-enter: ").strip().lower()
             if choice in {"y", "yes"}:
                 return suggestion, "suspicious"
@@ -172,7 +261,10 @@ def resolve_ingredient_input_with_guidance(raw_ingredient, fallback_recipes, pro
                 return "done", "done"
             continue
 
-        print(f"'{ingredient}' looks uncommon. {assessment['reason']}")
+        if confidence is None:
+            print(f"'{ingredient}' looks uncommon. {assessment['reason']}")
+        else:
+            print(f"'{ingredient}' looks uncommon (confidence {confidence:.2f}). {assessment['reason']}")
         choice = input("[K]eep as entered or [R]e-enter: ").strip().lower()
         if choice in {"k", "keep", "y", "yes"}:
             return assessment["normalized"], "suspicious"

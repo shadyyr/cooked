@@ -2,13 +2,21 @@ import sys
 from ingredients import normalize_ingredient
 from quantities import is_quantity_sufficient, compute_short_by
 
+def get_exact_pantry_quantity_for_recipe_ingredient(pantry, recipe_ingredient):
+    """
+    Exact normalized-name lookup only.
+    Example: pantry 'butter' must NOT satisfy recipe 'unsalted butter'.
+    """
+    normalized_recipe_ingredient = normalize_ingredient(recipe_ingredient)
+    return pantry.get(normalized_recipe_ingredient)
+
+
 def can_make_recipe(pantry, recipe_requirements):
     missing = []
     insufficient = []
 
     for req_ing, req_qty in recipe_requirements.items():
-        normalized = normalize_ingredient(req_ing)
-        pantry_qty = pantry.get(normalized)
+        pantry_qty = get_exact_pantry_quantity_for_recipe_ingredient(pantry, req_ing)
         if pantry_qty is None:
             missing.append(req_ing)
             continue

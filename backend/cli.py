@@ -16,6 +16,7 @@ from ingredients import (
     normalize_ingredient,
     assess_ingredient_confidence,
     resolve_ingredient_input_with_guidance,
+    record_ingredient_observation,
 )
 
 def get_ingredients(fallback_recipes):
@@ -56,7 +57,9 @@ def get_ingredients(fallback_recipes):
             normalized = assessment["normalized"]
             if assessment["status"] == "suspicious":
                 hint = f" Suggestion: {assessment['suggestion']}." if assessment["suggestion"] else ""
-                print(f"Uncommon ingredient '{ingredient}' accepted as '{normalized}'.{hint}")
+                score = assessment.get("confidence_score")
+                score_text = f" (confidence {score:.2f})" if score is not None else ""
+                print(f"Uncommon ingredient '{ingredient}' accepted as '{normalized}'{score_text}.{hint}")
 
         quantity_prompt = "Quantity (e.g. 2 cup, 250 ml, 3 slice): " if interactive else ""
         quantity_input = input(quantity_prompt).strip()
@@ -77,6 +80,7 @@ def get_ingredients(fallback_recipes):
 
         quantity = parse_quantity(quantity_input)
         formatted_input = format_quantity_display(quantity)
+        record_ingredient_observation(normalized)
 
         if normalized in ingredients:
             combined_quantity, target_unit = combine_quantities(ingredients[normalized], quantity)
@@ -142,6 +146,7 @@ def add_more_ingredients(existing_ingredients, fallback_recipes):
 
         quantity = parse_quantity(quantity_input)
         formatted_input = format_quantity_display(quantity)
+        record_ingredient_observation(normalized)
 
         if normalized in existing_ingredients:
             previous_quantity = existing_ingredients[normalized]
@@ -225,6 +230,7 @@ def edit_ingredients(existing_ingredients, fallback_recipes):
             if normalized_new == normalized_target:
                 print("Ingredient name is unchanged.")
                 continue
+            record_ingredient_observation(normalized_new)
 
             if normalized_new in existing_ingredients:
                 merged_qty, _ = combine_quantities(existing_ingredients[normalized_new], current_qty)

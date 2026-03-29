@@ -7,6 +7,7 @@ from config import REQUEST_TIMEOUT, USER_AGENT
 MEALDB_BASE_URL = "https://www.themealdb.com/api/json/v1/1"
 _RESPONSE_CACHE = {}
 _INGREDIENT_CACHE = {}
+_MEAL_METADATA_BY_NAME = {}
 
 def mealdb_get_json(url):
     if url in _RESPONSE_CACHE:
@@ -66,6 +67,34 @@ def extract_ingredients_from_meal(meal):
     return requirements
 
 
+def extract_meal_metadata(meal):
+    meal_name = (meal.get("strMeal") or "").strip()
+    if not meal_name:
+        return None, None
+
+    instructions_raw = (meal.get("strInstructions") or "").strip()
+    instructions = [
+        line.strip()
+        for line in instructions_raw.splitlines()
+        if line and line.strip()
+    ]
+    description = instructions_raw.split(".")[0].strip() if instructions_raw else ""
+    if description:
+        description = f"{description}."
+
+    metadata = {
+        "image_url": (meal.get("strMealThumb") or "").strip() or None,
+        "description": description or None,
+        "instructions": instructions,
+        "tags": [t.strip() for t in (meal.get("strTags") or "").split(",") if t.strip()],
+        "category": (meal.get("strCategory") or "").strip() or None,
+        "area": (meal.get("strArea") or "").strip() or None,
+        "source_url": (meal.get("strSource") or "").strip() or None,
+        "youtube_url": (meal.get("strYoutube") or "").strip() or None,
+    }
+    return meal_name, metadata
+
+
 def fetch_mealdb_recipes(pantry, limit):
     """
     Builds candidate recipes from TheMealDB using pantry ingredient overlap.
@@ -96,5 +125,23 @@ def fetch_mealdb_recipes(pantry, limit):
         requirements = extract_ingredients_from_meal(meal)
         if requirements:
             recipes[recipe_name] = requirements
+            metadata_name, metadata = extract_meal_metadata(meal)
+            if metadata_name and metadata:
+                _MEAL_METADATA_BY_NAME[metadata_name] = metadata
 
     return recipes
+
+
+def get_api_hit_count_for_ingredient(ingredient):
+    """
+    Returns number of MealDB hits for an ingredient.
+    Uses cache when available and falls back to a live lookup.
+    """
+    normalized = normalize_ingredient(ingredient)
+    if normalized in _INGREDIENT_CACHE:
+        return len(_INGREDIENT_CACHE[normalized])
+    return None
+
+
+def get_meal_metadata_by_name(recipe_name):
+    return _MEAL_METADATA_BY_NAME.get(recipe_name)
