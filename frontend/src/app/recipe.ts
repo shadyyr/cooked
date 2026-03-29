@@ -11,6 +11,7 @@ export interface Recipe {
   source?: string;
   ingredients: Ingredient[];
   instructions: string[];
+  isFavorite?: boolean;
 
   // Legacy optional fields retained temporarily for compatibility.
   prepTime?: string;
