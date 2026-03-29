@@ -5,7 +5,7 @@ import { Recipe } from './recipe';
  * 
  * This service fetches recipes from the Python backend which uses:
  * - TheMealDB API for real recipe data
- * - Local fallback recipes when API is unavailable
+ * - Backend fallback recipes from `fallbacks.py` when API is unavailable
  * - Ingredient normalization and validation
  * 
  * The backend processes:
@@ -15,11 +15,9 @@ import { Recipe } from './recipe';
  * 4. Returns formatted recipe data for the frontend
  * 
  * Fallback behavior:
- * - If no recipes found from API, returns fallback recipes
- * - If API is unreachable, returns fallback recipes
+ * - Backend provides fallback recipe data when available
+ * - If backend is unreachable, returns an empty list
  */
-
-import { mockRecipes } from './mockRecipes';
 
 interface FetchRecipesOptions {
   search?: string;
@@ -49,6 +47,51 @@ const RECIPE_META_KEYS = new Set([
   'description',
   'instructions',
 ]);
+
+const DEFAULT_API_CANDIDATES = [
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
+  'http://localhost:5000',
+  'http://127.0.0.1:5000',
+];
+
+let workingApiBaseUrl: string | null = null;
+
+function getApiBaseCandidates(): string[] {
+  const configured = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
+  if (configured) {
+    return [configured, ...DEFAULT_API_CANDIDATES.filter((x) => x !== configured)];
+  }
+  return DEFAULT_API_CANDIDATES;
+}
+
+async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
+  const candidates = getApiBaseCandidates();
+  const ordered = workingApiBaseUrl
+    ? [workingApiBaseUrl, ...candidates.filter((x) => x !== workingApiBaseUrl)]
+    : candidates;
+
+  let lastError: unknown = null;
+  let lastBadResponse: Response | null = null;
+
+  for (const baseUrl of ordered) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      if (response.ok) {
+        workingApiBaseUrl = baseUrl;
+        return response;
+      }
+      lastBadResponse = response;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastBadResponse) {
+    return lastBadResponse;
+  }
+  throw lastError || new Error('Failed to reach backend API');
+}
 
 /**
  * Converts a backend recipe response into the frontend Recipe format
@@ -219,7 +262,7 @@ function extractUnit(quantity: string): string {
 
 /**
  * Fetches recipes from the backend API based on ingredients
- * If no recipes are found from the backend, returns fallback recipes
+ * If no recipes are found from the backend, returns an empty list
  * 
  * Backend integration:
  * - Sends list of ingredients to Python backend
@@ -229,8 +272,8 @@ function extractUnit(quantity: string): string {
  * - Returns formatted recipe data
  * 
  * Fallback behavior:
- * - If API returns empty results, uses mockRecipes
- * - If API is unreachable, uses mockRecipes
+ * - Backend handles fallback data from `fallbacks.py`
+ * - If backend is unreachable, returns an empty list
  * - Logs which source is being used
  */
 export async function getRecipes(
@@ -240,11 +283,9 @@ export async function getRecipes(
     // Simulate API delay for development (optional)
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
     // For initial page load without ingredients, fetch backend fallback catalog
     if (!options?.search) {
-      const response = await fetch(`${apiUrl}/api/recipes/search`, {
+      const response = await fetchBackend('/api/recipes/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -257,15 +298,15 @@ export async function getRecipes(
       });
 
       if (!response.ok) {
-        console.log('Backend unavailable on initial load. Using frontend mock fallback.');
-        return mockRecipes;
+        console.log('Backend unavailable on initial load. Returning empty recipe list.');
+        return [];
       }
 
       const data = await response.json();
       const backendRecipes: BackendRecipe[] = data.recipes || [];
       if (backendRecipes.length === 0) {
-        console.log('Backend returned no initial recipes. Using frontend mock fallback.');
-        return mockRecipes;
+        console.log('Backend returned no initial recipes.');
+        return [];
       }
 
       return backendRecipes.map((recipe, index) =>
@@ -273,7 +314,7 @@ export async function getRecipes(
       );
     }
 
-    const response = await fetch(`${apiUrl}/api/recipes/search`, {
+    const response = await fetchBackend('/api/recipes/search', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -287,20 +328,18 @@ export async function getRecipes(
 
     if (!response.ok) {
       console.warn(
-        `Backend API request failed with status ${response.status}. Using fallback recipes.`
+        `Backend API request failed with status ${response.status}.`
       );
-      return mockRecipes;
+      return [];
     }
 
     const data = await response.json();
     const backendRecipes: BackendRecipe[] = data.recipes || [];
 
-    // If no recipes found from API, use fallback recipes
+    // If no recipes found from backend, return empty list
     if (backendRecipes.length === 0) {
-      console.log(
-        `No recipes found from backend API for "${options.search}". Using fallback recipes.`
-      );
-      return mockRecipes;
+      console.log(`No recipes found from backend API for "${options.search}".`);
+      return [];
     }
 
     // Convert backend format to frontend Recipe format
@@ -315,17 +354,17 @@ export async function getRecipes(
     return recipes;
   } catch (error) {
     console.error(
-      'Failed to fetch recipes from backend API. Using fallback recipes:',
+      'Failed to fetch recipes from backend API:',
       error
     );
-    return mockRecipes;
+    return [];
   }
 }
 
 /**
  * Fetches recipes based on added ingredients from the ingredient modal
  * This is the main method called when user adds ingredients
- * If no recipes found from API, returns fallback recipes
+ * If no recipes found from backend, returns an empty list
  * 
  * Usage:
  * const addedIngredients = [
@@ -352,8 +391,6 @@ export async function fetchRecipesByIngredients(
     // Simulate API delay for development (optional)
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
     // Send full ingredient payload (name + quantity + unit) to backend
     const ingredientPayload = ingredients.map((ing) => ({
       ingredient: ing.ingredient,
@@ -361,7 +398,7 @@ export async function fetchRecipesByIngredients(
       unit: ing.unit,
     }));
 
-    const response = await fetch(`${apiUrl}/api/recipes/search`, {
+    const response = await fetchBackend('/api/recipes/search', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -375,22 +412,22 @@ export async function fetchRecipesByIngredients(
 
     if (!response.ok) {
       console.warn(
-        `Backend API request failed with status ${response.status}. Using fallback recipes.`
+        `Backend API request failed with status ${response.status}.`
       );
-      return mockRecipes;
+      return [];
     }
 
     const data = await response.json();
     const backendRecipes: BackendRecipe[] = data.recipes || [];
 
-    // If no recipes found from API, use fallback recipes
+    // If no recipes found from backend, return empty list
     if (backendRecipes.length === 0) {
       console.log(
         `No recipes found from backend API for ingredients: ${ingredientPayload
           .map((x) => x.ingredient)
-          .join(', ')}. Using fallback recipes.`
+          .join(', ')}.`
       );
-      return mockRecipes;
+      return [];
     }
 
     // Convert backend format to frontend Recipe format
@@ -410,16 +447,16 @@ export async function fetchRecipesByIngredients(
     return recipes;
   } catch (error) {
     console.error(
-      'Failed to fetch recipes by ingredients. Using fallback recipes:',
+      'Failed to fetch recipes by ingredients:',
       error
     );
-    return mockRecipes;
+    return [];
   }
 }
 
 /**
  * Fetches a single recipe by ID from the backend API
- * Falls back to searching mockRecipes if not found in API
+ * Returns null if not found in backend
  * 
  * Backend endpoint:
  * GET /api/recipes/{id}
@@ -429,9 +466,7 @@ export async function getRecipeById(id: string): Promise<Recipe | null> {
     // Simulate API delay for development (optional)
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-    const response = await fetch(`${apiUrl}/api/recipes/${id}`, {
+    const response = await fetchBackend(`/api/recipes/${id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -439,13 +474,6 @@ export async function getRecipeById(id: string): Promise<Recipe | null> {
     });
 
     if (!response.ok) {
-      // Try fallback recipes
-      const fallbackRecipe = mockRecipes.find((recipe) => recipe.id === id);
-      if (fallbackRecipe) {
-        console.log(`Recipe ${id} not found in API. Using fallback recipe.`);
-        return fallbackRecipe;
-      }
-      
       console.warn(`Recipe ${id} not found (status ${response.status})`);
       return null;
     }
@@ -453,16 +481,6 @@ export async function getRecipeById(id: string): Promise<Recipe | null> {
     const backendRecipe: BackendRecipe = await response.json();
     return convertBackendRecipeToFrontend(backendRecipe, 0);
   } catch (error) {
-    // Try fallback recipes on error
-    const fallbackRecipe = mockRecipes.find((recipe) => recipe.id === id);
-    if (fallbackRecipe) {
-      console.log(
-        `Failed to fetch recipe ${id} from API. Using fallback recipe:`,
-        error
-      );
-      return fallbackRecipe;
-    }
-    
     console.error(`Failed to fetch recipe ${id}:`, error);
     return null;
   }
