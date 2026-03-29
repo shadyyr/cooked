@@ -14,6 +14,7 @@ import IngredientModal from './IngredientModal';
 import { auth, provider, db } from './firebase';
 import {
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   onAuthStateChanged,
   User,
@@ -102,7 +103,16 @@ export default function RecipesLanding() {
 
   const signInWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+      if (isLocalhost) {
+        await signInWithPopup(auth, provider);
+        return;
+      }
+
+      // Redirect flow is more reliable in production-hosted environments.
+      await signInWithRedirect(auth, provider);
     } catch (error) {
       console.error('Google sign-in failed:', error);
     }
