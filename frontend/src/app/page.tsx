@@ -11,6 +11,14 @@ import {
   getRecipeById
 } from './recipe-service';
 import RecipeModal from './RecipeModal';
+import IngredientModal from './IngredientModal';
+
+interface AddedIngredient {
+  id: string;
+  ingredient: string;
+  quantity: string;
+  unit: string;
+}
 
 export default function RecipesLanding() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -21,6 +29,10 @@ export default function RecipesLanding() {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoadingRecipe, setIsLoadingRecipe] = useState(false);
+
+  // Ingredient modal state
+  const [isIngredientModalOpen, setIsIngredientModalOpen] = useState(false);
+  const [addedIngredients, setAddedIngredients] = useState<AddedIngredient[]>([]);
 
   useEffect(() => {
     const fetchRecipes = async () => {
@@ -56,6 +68,18 @@ export default function RecipesLanding() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setTimeout(() => setSelectedRecipe(null), 300);
+  };
+
+  const handleCloseIngredientModal = () => {
+    setIsIngredientModalOpen(false);
+  };
+
+  const handleAddIngredient = (ingredient: AddedIngredient) => {
+    setAddedIngredients((prev) => [...prev, ingredient]);
+  };
+
+  const handleRemoveIngredient = (id: string) => {
+    setAddedIngredients((prev) => prev.filter((ing) => ing.id !== id));
   };
 
   const filteredRecipes = useMemo(() => {
@@ -159,7 +183,7 @@ export default function RecipesLanding() {
             </div>
           </motion.div>
 
-          {/* Difficulty Filter */}
+          {/* Difficulty Filter and Add Ingredient Button */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -194,7 +218,55 @@ export default function RecipesLanding() {
                 {difficulty}
               </motion.button>
             ))}
+
+            {/* Add Ingredient Button */}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setIsIngredientModalOpen(true)}
+              className="ml-auto px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg transition font-semibold"
+            >
+              + Add Ingredient
+            </motion.button>
           </motion.div>
+
+          {/* Added Ingredients Display */}
+          {addedIngredients.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="mb-8 p-4 bg-orange-600/10 border border-orange-600/30 rounded-lg"
+            >
+              <p className="text-sm font-semibold text-gray-300 mb-3">
+                Selected Ingredients:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {addedIngredients.map((ingredient) => (
+                  <motion.div
+                    key={ingredient.id}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="inline-flex items-center gap-2 bg-orange-600/20 border border-orange-600/50 text-orange-300 px-3 py-2 rounded-full text-sm font-medium hover:bg-orange-600/30 transition group"
+                  >
+                    <span>
+                      {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
+                    </span>
+                    <motion.button
+                      whileHover={{ scale: 1.2 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => handleRemoveIngredient(ingredient.id)}
+                      className="ml-1 text-orange-400 hover:text-orange-200 transition opacity-0 group-hover:opacity-100"
+                      aria-label="Remove ingredient"
+                    >
+                      ✕
+                    </motion.button>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           {/* Results Count */}
           {!isLoading && (
@@ -221,7 +293,6 @@ export default function RecipesLanding() {
               <p className="text-xl text-gray-300">Loading recipes...</p>
             </motion.div>
           ) : filteredRecipes.length > 0 ? (
-            // FIX: Add key prop to force re-mount when filteredRecipes changes
             <motion.div
               key={filteredRecipes.length}
               variants={containerVariants}
@@ -377,6 +448,13 @@ export default function RecipesLanding() {
         recipe={selectedRecipe}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
+      />
+
+      {/* Ingredient Modal */}
+      <IngredientModal
+        isOpen={isIngredientModalOpen}
+        onClose={handleCloseIngredientModal}
+        onAddIngredient={handleAddIngredient}
       />
     </div>
   );
