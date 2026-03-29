@@ -232,6 +232,10 @@ def parse_amount_unit(quantity_input):
     # unit normalization with map
     unit = UNIT_MAP.get(unit, unit)
 
+    # default to "count" if no unit provided
+    if not unit:
+        unit = "count"
+
     # convert fractional numbers to float
     if '/' in num_text:
         n, d = num_text.split('/')
