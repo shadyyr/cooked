@@ -2,22 +2,46 @@ import json
 from urllib import parse, request
 from urllib.error import URLError, HTTPError
 from ingredients import normalize_ingredient, API_SEEN_INGREDIENTS
+from config import REQUEST_TIMEOUT, USER_AGENT
 
 MEALDB_BASE_URL = "https://www.themealdb.com/api/json/v1/1"
+_RESPONSE_CACHE = {}
+_INGREDIENT_CACHE = {}
 
 def mealdb_get_json(url):
-    req = request.Request(url, headers={"User-Agent": "cooked-backend/1.0"})
-    with request.urlopen(req, timeout=8) as resp:
-        data = resp.read().decode("utf-8")
-    return json.loads(data)
+    if url in _RESPONSE_CACHE:
+        return _RESPONSE_CACHE[url]
 
+    req = request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            data = resp.read().decode("utf-8")
+        parsed = json.loads(data)
+        _RESPONSE_CACHE[url] = parsed
+        return parsed
+    except (URLError, HTTPError, TimeoutError, json.JSONDecodeError) as e:
+        print(f"[API ERROR] Failed request for URL: {url}")
+        print(f"[API ERROR] {type(e).__name__}: {e}")
+        raise
 
 def search_meal_ids_by_ingredient(ingredient):
-    encoded = parse.quote(ingredient)
+    normalized = normalize_ingredient(ingredient)
+
+    # ingredient-level cache check
+    if normalized in _INGREDIENT_CACHE:
+        return _INGREDIENT_CACHE[normalized]
+
+    encoded = parse.quote(normalized)
     url = f"{MEALDB_BASE_URL}/filter.php?i={encoded}"
+
     payload = mealdb_get_json(url)
     meals = payload.get("meals") or []
-    return {m["idMeal"] for m in meals if m.get("idMeal")}
+    ids = {m["idMeal"] for m in meals if m.get("idMeal")}
+
+    # store in cache
+    _INGREDIENT_CACHE[normalized] = ids
+
+    return ids
 
 
 def lookup_meal_detail(meal_id):

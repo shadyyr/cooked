@@ -6,11 +6,8 @@ from quantities import format_quantity_display
 from recipes import suggest_recipes, display_suggestions_paginated
 from api import fetch_mealdb_recipes
 from cli import get_ingredients, add_more_ingredients, edit_ingredients
+from config import API_RESULT_LIMIT, DISPLAY_BATCH_SIZE, MIN_MATCH_SCORE
 from fallbacks import FALLBACK_RECIPES
-
-API_RESULT_LIMIT = 12
-DISPLAY_BATCH_SIZE = 3
-MIN_MATCH_SCORE = 0.30
 
 if __name__ == "__main__":
     user_ingredients = get_ingredients(FALLBACK_RECIPES)
