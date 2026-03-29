@@ -573,8 +573,10 @@ export async function suggestUnitsForIngredient(
   }
 
   const payload = await response.json().catch(() => ({}));
-  const units = Array.isArray(payload.units) ? payload.units : [];
-  return units.map((u) => String(u).trim().toLowerCase()).filter(Boolean);
+  const rawUnits: unknown[] = Array.isArray(payload.units) ? payload.units : [];
+  return rawUnits
+    .map((u: unknown) => String(u).trim().toLowerCase())
+    .filter((u: string) => Boolean(u));
 }
 
 /**
