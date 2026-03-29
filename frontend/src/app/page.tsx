@@ -255,6 +255,18 @@ export default function RecipesLanding() {
     return results;
   }, [recipes, searchQuery, showFavoritesOnly, favoriteRecipeIds]);
 
+  const CARD_EASE = [0.22, 1, 0.36, 1] as const;
+
+  const getMatchBadgeClass = (matchPercent: number) => {
+    if (matchPercent >= 70) {
+      return 'bg-emerald-500/90 text-emerald-50';
+    }
+    if (matchPercent >= 40) {
+      return 'bg-amber-500/90 text-amber-50';
+    }
+    return 'bg-rose-500/90 text-rose-50';
+  };
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -271,7 +283,7 @@ export default function RecipesLanding() {
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.5 },
+      transition: { duration: 0.5, ease: CARD_EASE },
     },
   };
 
@@ -339,14 +351,14 @@ export default function RecipesLanding() {
 
       {/* Top Search + Ingredient controls (screenshot style) */}
       <section className="pt-24 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-700/60 rounded-2xl p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
           <div className="w-full">
             <input
               type="text"
               placeholder="Search recipes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-14 px-5 rounded-xl bg-slate-800 border border-slate-700 text-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full h-14 px-5 rounded-xl bg-slate-800/80 border border-slate-700 text-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
           <button
@@ -361,80 +373,48 @@ export default function RecipesLanding() {
         </div>
 
         {addedIngredients.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-xl"
-          >
-            <p className="text-sm text-slate-300 mb-2 font-semibold">Selected Ingredients</p>
-            <div className="flex flex-wrap gap-2">
-              {addedIngredients.map((ingredient) => (
-                <span
-                  key={ingredient.id}
-                  className="inline-flex items-center gap-2 bg-slate-800 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-full text-sm"
-                >
-                  {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
-                  <button
-                    onClick={() => handleRemoveIngredient(ingredient.id)}
-                    className="text-slate-400 hover:text-slate-100"
-                    aria-label="Remove ingredient"
+          <div className="max-w-7xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: CARD_EASE }}
+              className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-xl"
+            >
+              <p className="text-sm text-slate-300 mb-2 font-semibold">Selected Ingredients</p>
+              <div className="flex flex-wrap gap-3">
+                {addedIngredients.map((ingredient) => (
+                  <motion.div
+                    key={ingredient.id}
+                    initial={{ opacity: 0, scale: 0.96, y: 4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.2, ease: CARD_EASE }}
+                    className="group inline-flex items-center rounded-full border border-slate-600 bg-slate-800/90 text-sm text-slate-100 shadow-sm shadow-black/25"
                   >
-                    ✕
-                  </button>
-                </span>
-              ))}
-            </div>
-          </motion.div>
+                    <button
+                      onClick={() => handleEditIngredient(ingredient)}
+                      className="px-3 py-2 font-medium hover:text-orange-200 transition"
+                      title="Edit ingredient"
+                    >
+                      {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
+                    </button>
+                    <button
+                      onClick={() => handleRemoveIngredient(ingredient.id)}
+                      className="border-l border-slate-600 px-2 py-2 text-slate-400 transition hover:bg-slate-700 hover:text-slate-100 rounded-r-full"
+                      aria-label="Remove ingredient"
+                    >
+                      x
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
         )}
       </section>
 
       {/* Search Section (simpler now) */}
       <section id="recipes" className="py-6 px-4">
         <div className="max-w-7xl mx-auto">
-
-          {/* Added Ingredients Display */}
-          {addedIngredients.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="mb-8 p-4 bg-orange-600/10 border border-orange-600/30 rounded-lg"
-            >
-              <p className="text-sm font-semibold text-gray-300 mb-3">
-                Selected Ingredients:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {addedIngredients.map((ingredient) => (
-                  <motion.div
-                    key={ingredient.id}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="inline-flex items-center gap-2 bg-orange-600/20 border border-orange-600/50 text-orange-300 px-3 py-2 rounded-full text-sm font-medium hover:bg-orange-600/30 transition group cursor-pointer"
-                    onClick={() => handleEditIngredient(ingredient)}
-                    title="Click to edit ingredient"
-                  >
-                    <span>
-                      {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
-                    </span>
-                    <motion.button
-                      whileHover={{ scale: 1.2 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveIngredient(ingredient.id);
-                      }}
-                      className="ml-1 text-orange-400 hover:text-orange-200 transition opacity-0 group-hover:opacity-100"
-                      aria-label="Remove ingredient"
-                    >
-                      ✕
-                    </motion.button>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
 
           {/* Results Count */}
           {!isLoading && !isLoadingRecipes && (
@@ -495,15 +475,15 @@ export default function RecipesLanding() {
                   className="cursor-pointer"
                 >
                   <motion.div
-                    whileHover={{ scale: 1.05, translateY: -5 }}
-                    transition={{ duration: 0.3 }}
-                    className="bg-slate-700/50 rounded-lg overflow-hidden border border-slate-600 hover:border-blue-400 transition-all"
+                    whileHover={{ scale: 1.02, translateY: -4 }}
+                    transition={{ duration: 0.28, ease: CARD_EASE }}
+                    className="bg-slate-900/40 backdrop-blur-xl rounded-2xl overflow-hidden border border-slate-600/70 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/20 transition-all"
                   >
                     {/* Recipe Image */}
                     <div className="relative h-52 md:h-56 overflow-hidden bg-slate-900">
                       <motion.img
-                        whileHover={{ scale: 1.08 }}
-                        transition={{ duration: 0.4 }}
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ duration: 0.35, ease: CARD_EASE }}
                         src={recipe.image}
                         alt={recipe.title}
                         className="w-full h-full object-cover"
@@ -534,10 +514,10 @@ export default function RecipesLanding() {
                       <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2 }}
+                        transition={{ delay: 0.2, ease: CARD_EASE }}
                         className="absolute top-3 right-3"
                       >
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/90 text-slate-900">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm ${getMatchBadgeClass(recipe.matchPercent)}`}>
                           {Math.round(recipe.matchPercent)}% match
                         </span>
                       </motion.div>
@@ -555,15 +535,15 @@ export default function RecipesLanding() {
                     </div>
 
                     {/* Recipe Info */}
-                    <div className="p-6">
-                      <h3 className="text-2xl md:text-2xl font-bold mb-2 text-slate-100 group-hover:text-orange-300 transition">
+                    <div className="p-5 md:p-6 space-y-3">
+                      <h3 className="text-xl md:text-2xl font-bold leading-tight text-slate-100 group-hover:text-orange-300 transition">
                         {recipe.title}
                       </h3>
-                      <p className="text-slate-300 text-sm mb-4 line-clamp-2">
+                      <p className="text-slate-300 text-sm line-clamp-2">
                         {recipe.description}
                       </p>
 
-                      <div className="mt-3">
+                      <div>
                         <h4 className="text-xs text-zinc-300 uppercase tracking-widest font-semibold mb-1">Ingredient status</h4>
                         {recipe.missingIngredients.length > 0 ? (
                           <p className="text-xs text-amber-300">
@@ -580,7 +560,7 @@ export default function RecipesLanding() {
                           href={recipe.youtubeUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-block mt-3 text-sm text-red-300 hover:text-red-200 underline"
+                          className="inline-block text-sm text-red-300 hover:text-red-200 underline"
                           onClick={(e) => e.stopPropagation()}
                         >
                           Watch on YouTube
@@ -622,3 +602,4 @@ export default function RecipesLanding() {
     </div>
   );
 }
+
