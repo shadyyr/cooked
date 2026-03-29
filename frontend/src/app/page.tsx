@@ -8,7 +8,8 @@ import {
   getRecipes, 
   searchRecipes, 
   filterByDifficulty,
-  getRecipeById
+  getRecipeById,
+  fetchRecipesByIngredients
 } from './recipe-service';
 import RecipeModal from './RecipeModal';
 import IngredientModal from './IngredientModal';
@@ -33,21 +34,23 @@ export default function RecipesLanding() {
   // Ingredient modal state
   const [isIngredientModalOpen, setIsIngredientModalOpen] = useState(false);
   const [addedIngredients, setAddedIngredients] = useState<AddedIngredient[]>([]);
+  const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
 
+  // Load initial recipes (fallback) on mount
   useEffect(() => {
-    const fetchRecipes = async () => {
+    const loadInitialRecipes = async () => {
       try {
         setIsLoading(true);
         const data = await getRecipes();
         setRecipes(data);
       } catch (error) {
-        console.error('Failed to fetch recipes:', error);
+        console.error('Failed to fetch initial recipes:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchRecipes();
+    loadInitialRecipes();
   }, []);
 
   const handleRecipeClick = async (recipe: Recipe) => {
@@ -74,12 +77,50 @@ export default function RecipesLanding() {
     setIsIngredientModalOpen(false);
   };
 
-  const handleAddIngredient = (ingredient: AddedIngredient) => {
-    setAddedIngredients((prev) => [...prev, ingredient]);
+  // When a new ingredient is added, fetch updated recipes
+  const handleAddIngredient = async (ingredient: AddedIngredient) => {
+    // Add ingredient to list
+    const updatedIngredients = [...addedIngredients, ingredient];
+    setAddedIngredients(updatedIngredients);
+
+    // Fetch recipes based on all added ingredients
+    console.log(`Ingredient added: ${ingredient.ingredient}. Fetching updated recipes...`);
+    await fetchUpdatedRecipes(updatedIngredients);
   };
 
-  const handleRemoveIngredient = (id: string) => {
-    setAddedIngredients((prev) => prev.filter((ing) => ing.id !== id));
+  // Fetch recipes based on current added ingredients
+  const fetchUpdatedRecipes = async (ingredients: AddedIngredient[]) => {
+    try {
+      setIsLoadingRecipes(true);
+      console.log(`Fetching recipes for ${ingredients.length} ingredients...`);
+      
+      const updatedRecipes = await fetchRecipesByIngredients(ingredients);
+      setRecipes(updatedRecipes);
+      
+      console.log(`Updated recipe list with ${updatedRecipes.length} recipes`);
+    } catch (error) {
+      console.error('Failed to fetch updated recipes:', error);
+    } finally {
+      setIsLoadingRecipes(false);
+    }
+  };
+
+  const handleRemoveIngredient = async (id: string) => {
+    const updatedIngredients = addedIngredients.filter((ing) => ing.id !== id);
+    setAddedIngredients(updatedIngredients);
+
+    // Refetch recipes with updated ingredient list
+    console.log(
+      `Ingredient removed. Fetching updated recipes for ${updatedIngredients.length} ingredients...`
+    );
+    
+    if (updatedIngredients.length === 0) {
+      // If no ingredients left, load fallback recipes
+      const data = await getRecipes();
+      setRecipes(data);
+    } else {
+      await fetchUpdatedRecipes(updatedIngredients);
+    }
   };
 
   const filteredRecipes = useMemo(() => {
@@ -269,13 +310,16 @@ export default function RecipesLanding() {
           )}
 
           {/* Results Count */}
-          {!isLoading && (
+          {!isLoading && !isLoadingRecipes && (
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-sm text-gray-400 mb-6"
             >
               Showing {filteredRecipes.length} of {recipes.length} recipes
+              {addedIngredients.length > 0 && (
+                <span> based on {addedIngredients.length} ingredient(s)</span>
+              )}
             </motion.p>
           )}
         </div>
@@ -284,13 +328,15 @@ export default function RecipesLanding() {
       {/* Recipe Grid */}
       <section className="py-16 px-4">
         <div className="max-w-7xl mx-auto">
-          {isLoading ? (
+          {isLoading || isLoadingRecipes ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-center py-16"
             >
-              <p className="text-xl text-gray-300">Loading recipes...</p>
+              <p className="text-xl text-gray-300">
+                {isLoading ? 'Loading recipes...' : 'Updating recipes...'}
+              </p>
             </motion.div>
           ) : filteredRecipes.length > 0 ? (
             <motion.div
