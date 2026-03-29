@@ -20,190 +20,23 @@ from quantities import (
     is_quantity_sufficient,
     compute_short_by,
 )
+from ingredients import (
+    CURATED_COMMON_INGREDIENTS,
+    API_SEEN_INGREDIENTS,
+    PLURAL_MAP,
+    normalize_ingredient,
+    is_valid_ingredient,
+    ingredient_syntax_reason,
+    get_ingredient_vocabulary,
+    suggest_ingredient_correction,
+    assess_ingredient_confidence,
+    resolve_ingredient_input_with_guidance,
+)
 
 MEALDB_BASE_URL = "https://www.themealdb.com/api/json/v1/1"
 API_RESULT_LIMIT = 12
 DISPLAY_BATCH_SIZE = 3
 MIN_MATCH_SCORE = 0.30
-
-CURATED_COMMON_INGREDIENTS = {
-    "salt", "pepper", "sugar", "flour", "rice", "pasta", "bread", "egg", "milk", "butter",
-    "cheese", "tomato", "onion", "garlic", "potato", "chicken", "beef", "pork", "fish",
-    "olive oil", "vegetable oil", "vinegar", "soy sauce", "lemon", "lime", "carrot",
-    "broccoli", "mushroom", "spinach", "lettuce", "cucumber", "basil", "oregano", "thyme",
-    "paprika", "cumin", "chili", "ginger", "bean", "lentil", "corn", "apple", "banana",
-    "strawberry", "blueberry", "yogurt", "cream", "canned tomato"
-}
-
-API_SEEN_INGREDIENTS = set()
-
-# Mapping for plural to singular forms
-PLURAL_MAP = {
-    "eggs": "egg",
-    "tomatoes": "tomato",
-    "onions": "onion",
-    "potatoes": "potato",
-    "carrots": "carrot",
-    "apples": "apple",
-    "bananas": "banana",
-    "oranges": "orange",
-    "strawberries": "strawberry",
-    "blueberries": "blueberry",
-    "nuts": "nut",
-    "seeds": "seed",
-    "herbs": "herb",
-    "spices": "spice",
-    "oats": "oat",
-    "cornflakes": "cornflake",
-    "bread crumbs": "bread crumb",
-    "crackers": "cracker",
-    "frozen vegetables": "frozen vegetable",
-    "canned tomatoes": "canned tomato",
-    "canned beans": "canned bean",
-    "lentils": "lentil",
-    "peas": "pea",
-    "green beans": "green bean",
-    "mushrooms": "mushroom",
-    "bell peppers": "bell pepper",
-    "jalapenos": "jalapeno",
-    "chilies": "chili",
-    "sprinkles": "sprinkle",
-    "extracts": "extract",
-    "flavorings": "flavoring"
-}
-
-def normalize_ingredient(ingredient):
-    """
-    Normalizes an ingredient to its singular form using a mapping.
-    """
-    ingredient = ingredient.strip().lower()
-    return PLURAL_MAP.get(ingredient, ingredient)
-
-def is_valid_ingredient(ingredient):
-    """
-    Layer 1 syntax/sanity validation only.
-    """
-    ingredient = ingredient.strip().lower()
-
-    if not ingredient:
-        return False
-
-    if len(ingredient) > 40:
-        return False
-
-    if not re.search(r"[a-zA-Z]", ingredient):
-        return False
-
-    # allow letters, spaces, hyphens, apostrophes
-    if not re.fullmatch(r"[a-zA-Z\s\-']+", ingredient):
-        return False
-
-    return True
-
-
-def ingredient_syntax_reason(ingredient):
-    text = ingredient.strip()
-    lowered = text.lower()
-    if not lowered:
-        return False, "Ingredient cannot be empty."
-    if len(lowered) > 40:
-        return False, "Ingredient is too long. Keep it under 40 characters."
-    if not re.search(r"[a-zA-Z]", lowered):
-        return False, "Ingredient must contain letters."
-    if "\\" in text or "/" in text or ":" in text:
-        return False, "This looks like a file path, not an ingredient."
-    if not re.fullmatch(r"[a-zA-Z\s\-']+", lowered):
-        return False, "Use only letters, spaces, hyphens, or apostrophes."
-    return True, None
-
-def get_ingredient_vocabulary():
-    fallback_ingredients = set()
-    for requirements in FALLBACK_RECIPES.values():
-        for ing in requirements.keys():
-            fallback_ingredients.add(normalize_ingredient(ing))
-    curated = {normalize_ingredient(x) for x in CURATED_COMMON_INGREDIENTS}
-    api_seen = {normalize_ingredient(x) for x in API_SEEN_INGREDIENTS}
-    return fallback_ingredients | curated | api_seen
-
-def suggest_ingredient_correction(ingredient_text):
-    vocabulary = sorted(get_ingredient_vocabulary())
-    return find_best_text_match(ingredient_text, vocabulary, max_dist_short=1, max_dist_long=2)
-
-
-def assess_ingredient_confidence(ingredient_text):
-    """
-    Layer 1: syntax/sanity
-    Layer 2: normalization/structuring
-    Layer 3: behavioral confidence from known vocabulary
-    """
-    syntax_ok, syntax_reason = ingredient_syntax_reason(ingredient_text)
-    if not syntax_ok:
-        return {
-            "status": "invalid",
-            "normalized": None,
-            "reason": syntax_reason,
-            "suggestion": None,
-        }
-
-    normalized = normalize_ingredient(ingredient_text)
-    vocabulary = get_ingredient_vocabulary()
-    if normalized in vocabulary:
-        return {
-            "status": "valid",
-            "normalized": normalized,
-            "reason": None,
-            "suggestion": None,
-        }
-
-    suggestion = suggest_ingredient_correction(normalized)
-    return {
-        "status": "suspicious",
-        "normalized": normalized,
-        "reason": "Ingredient looks syntactically valid but is uncommon in known recipes.",
-        "suggestion": suggestion if suggestion != normalized else None,
-    }
-
-
-def resolve_ingredient_input_with_guidance(raw_ingredient, prompt_label="Ingredient"):
-    """
-    Interactive resolver for ingredient confidence:
-    - invalid -> re-enter
-    - suspicious -> keep, use suggestion, or re-enter
-    """
-    ingredient = raw_ingredient
-    while True:
-        assessment = assess_ingredient_confidence(ingredient)
-        status = assessment["status"]
-        if status == "valid":
-            return assessment["normalized"], "valid"
-
-        if status == "invalid":
-            print(f"Invalid ingredient '{ingredient}'. {assessment['reason']}")
-            ingredient = input(f"{prompt_label}: ").strip().lower()
-            if ingredient == "done":
-                return "done", "done"
-            continue
-
-        suggestion = assessment["suggestion"]
-        if suggestion:
-            print(f"'{ingredient}' looks uncommon. Did you mean '{suggestion}'?")
-            choice = input("[Y]es use suggestion, [K]eep as entered, [R]e-enter: ").strip().lower()
-            if choice in {"y", "yes"}:
-                return suggestion, "suspicious"
-            if choice in {"k", "keep"}:
-                return assessment["normalized"], "suspicious"
-            ingredient = input(f"{prompt_label}: ").strip().lower()
-            if ingredient == "done":
-                return "done", "done"
-            continue
-
-        print(f"'{ingredient}' looks uncommon. {assessment['reason']}")
-        choice = input("[K]eep as entered or [R]e-enter: ").strip().lower()
-        if choice in {"k", "keep", "y", "yes"}:
-            return assessment["normalized"], "suspicious"
-        ingredient = input(f"{prompt_label}: ").strip().lower()
-        if ingredient == "done":
-            return "done", "done"
 
 # Local fallback recipes (used when API has no results / request fails)
 FALLBACK_RECIPES = {
@@ -511,13 +344,15 @@ def get_ingredients():
 
         # 3-layer ingredient validation
         if interactive:
-            normalized, confidence = resolve_ingredient_input_with_guidance(ingredient, prompt_label="Ingredient")
+            normalized, confidence = resolve_ingredient_input_with_guidance(
+                ingredient, FALLBACK_RECIPES, prompt_label="Ingredient"
+            )
             if normalized == "done":
                 break
             if confidence == "suspicious":
                 print(f"Accepted uncommon ingredient: {normalized}")
         else:
-            assessment = assess_ingredient_confidence(ingredient)
+            assessment = assess_ingredient_confidence(ingredient, FALLBACK_RECIPES)
             if assessment["status"] == "invalid":
                 print(f"Skipping invalid ingredient '{ingredient}': {assessment['reason']}")
                 continue
@@ -584,6 +419,7 @@ def add_more_ingredients(existing_ingredients):
 
         normalized, confidence = resolve_ingredient_input_with_guidance(
             ingredient,
+            FALLBACK_RECIPES,
             prompt_label="Additional ingredient"
         )
         if normalized == "done":
@@ -679,6 +515,7 @@ def edit_ingredients(existing_ingredients):
 
             normalized_new, confidence = resolve_ingredient_input_with_guidance(
                 new_name,
+                FALLBACK_RECIPES,
                 prompt_label="New ingredient name"
             )
             if normalized_new == "done":
