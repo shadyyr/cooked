@@ -173,18 +173,23 @@ export default function RecipesLanding() {
         className="fixed w-full top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-700"
       >
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Cooked!</h1>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-3 rounded-xl px-2 py-1 hover:bg-slate-800/70 transition"
+          >
+            <span className="h-9 w-9 rounded-lg p-1.5 shadow-lg shadow-black/20 ring-1 ring-white/15">
+              <img
+                src="/favicon.ico"
+                alt="Cooked logo"
+                className="h-full w-full object-contain"
+              />
+            </span>
+            <span className="text-2xl font-bold tracking-tight">Cooked!</span>
+          </Link>
           <div className="flex gap-6 items-center">
             <Link href="#recipes" className="hover:text-blue-400 transition">
               Recipes
             </Link>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-            >
-              Share Recipe
-            </motion.button>
           </div>
         </div>
       </motion.nav>
@@ -421,28 +426,6 @@ export default function RecipesLanding() {
           )}
         </div>
       </section>
-
-      {/* Footer CTA */}
-      <motion.section
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        transition={{ duration: 0.6 }}
-        className="py-16 px-4 bg-blue-600"
-      >
-        <div className="max-w-4xl mx-auto text-center">
-          <h3 className="text-3xl font-bold mb-4">Have a Recipe to Share?</h3>
-          <p className="text-lg mb-8 text-blue-100">
-            Contribute your favorite recipes to our growing collection
-          </p>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-white text-blue-600 px-8 py-3 rounded-lg text-lg font-bold hover:bg-gray-100 transition"
-          >
-            Submit a Recipe
-          </motion.button>
-        </div>
-      </motion.section>
 
       {/* Recipe Modal */}
       <RecipeModal
