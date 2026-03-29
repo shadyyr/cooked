@@ -54,6 +54,16 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
     return `${amount}${shortBy.unit ? ` ${shortBy.unit}` : ''}`;
   };
 
+  const getMatchBadgeClass = (matchPercent: number) => {
+    if (matchPercent >= 70) {
+      return 'bg-emerald-500/90 text-emerald-50';
+    }
+    if (matchPercent >= 40) {
+      return 'bg-amber-500/90 text-amber-50';
+    }
+    return 'bg-rose-500/90 text-rose-50';
+  };
+
   if (!recipe) return null;
 
   return (
@@ -95,7 +105,11 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                 <div className="mb-8">
                   <div className="flex flex-wrap gap-3 mb-6 items-start">
                     <h1 className="text-4xl font-bold text-white">{recipe.title}</h1>
-                    <span className="self-start px-4 py-2 rounded-full text-sm font-semibold bg-blue-600/85 text-white">
+                    <span
+                      className={`self-start px-4 py-2 rounded-full text-sm font-semibold ${getMatchBadgeClass(
+                        recipe.matchPercent
+                      )}`}
+                    >
                       {Math.round(recipe.matchPercent)}% match
                     </span>
                   </div>
@@ -159,12 +173,12 @@ export default function RecipeModal({ recipe, isOpen, onClose }: RecipeModalProp
                   >
                     <h2 className="text-2xl font-bold text-white mb-4">Ingredients</h2>
 
-                    <div className="mb-6 p-4 bg-orange-600/20 rounded-lg border border-orange-500/50">
+                    <div className="mb-6 p-4 bg-slate-700/40 rounded-lg border border-slate-600">
                       <label className="text-sm font-semibold text-gray-200 block mb-2">Scale Recipe:</label>
                       <select
                         value={scaleFactor}
                         onChange={(e) => setScaleFactor(parseFloat(e.target.value))}
-                        className="w-full px-3 py-2 border border-orange-500/50 rounded-lg focus:outline-none focus:border-orange-500 bg-slate-700 text-white"
+                        className="w-full px-3 py-2 border border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500 bg-slate-800 text-white"
                       >
                         <option value={0.5}>0.5x</option>
                         <option value={1}>1x</option>
