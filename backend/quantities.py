@@ -40,7 +40,9 @@ UNIT_MAP = {
     "pc": "piece",
     "pcs": "piece",
     "can": "can",
-    "cans": "can"
+    "cans": "can",
+    "count": "piece",
+    "counts": "piece",
 }
 
 UNIT_CONVERSIONS_TO_BASE = {
@@ -71,8 +73,11 @@ def format_amount_unit(amount, unit):
         amount_text = str(int(amount))
     else:
         amount_text = f"{float(amount):.2f}".rstrip("0").rstrip(".")
-    if unit:
-        return f"{amount_text} {unit}"
+
+    display_unit = "count" if unit == "piece" else unit
+
+    if display_unit:
+        return f"{amount_text} {display_unit}"
     return amount_text
 
 
@@ -232,9 +237,9 @@ def parse_amount_unit(quantity_input):
     # unit normalization with map
     unit = UNIT_MAP.get(unit, unit)
 
-    # default to "count" if no unit provided
+    # default to internal canonical count unit
     if not unit:
-        unit = "count"
+        unit = "piece"
 
     # convert fractional numbers to float
     if '/' in num_text:
