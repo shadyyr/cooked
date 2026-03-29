@@ -194,7 +194,10 @@ def search_recipes():
     recipes_to_use = api_recipes if api_recipes else FALLBACK_RECIPES
     source = "themealdb" if api_recipes else "fallback"
 
-    suggestions = suggest_recipes(pantry, recipes_to_use, min_score=min_score)[:limit]
+    suggestions = suggest_recipes(pantry, recipes_to_use, min_score=min_score)
+    # When user provided ingredients, hide exact 0% matches.
+    suggestions = [s for s in suggestions if (s.get("score") or 0.0) > 0.0]
+    suggestions = suggestions[:limit]
     recipe_payload = []
     for suggestion in suggestions:
         recipe_name = suggestion["recipe"]
