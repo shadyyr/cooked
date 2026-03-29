@@ -23,6 +23,13 @@ interface FetchRecipesOptions {
   search?: string;
 }
 
+interface IngredientValidationResult {
+  valid: boolean;
+  normalized?: string;
+  reason?: string;
+  suggestion?: string;
+}
+
 interface BackendRecipe {
   id?: string;
   recipe_name: string;
@@ -71,7 +78,7 @@ async function fetchBackend(path: string, init?: RequestInit): Promise<Response>
     ? [workingApiBaseUrl, ...candidates.filter((x) => x !== workingApiBaseUrl)]
     : candidates;
 
-  let lastError: unknown = null;
+  const networkErrors: string[] = [];
   let lastBadResponse: Response | null = null;
 
   for (const baseUrl of ordered) {
@@ -83,14 +90,27 @@ async function fetchBackend(path: string, init?: RequestInit): Promise<Response>
       }
       lastBadResponse = response;
     } catch (error) {
-      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      networkErrors.push(`${baseUrl}${path} -> ${message}`);
     }
   }
 
   if (lastBadResponse) {
     return lastBadResponse;
   }
-  throw lastError || new Error('Failed to reach backend API');
+
+  // Return a normal Response so callers can handle !ok without throwing TypeError.
+  return new Response(
+    JSON.stringify({
+      error: "Backend unreachable",
+      tried: ordered.map((baseUrl) => `${baseUrl}${path}`),
+      details: networkErrors,
+    }),
+    {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
 }
 
 /**
@@ -484,6 +504,77 @@ export async function getRecipeById(id: string): Promise<Recipe | null> {
     console.error(`Failed to fetch recipe ${id}:`, error);
     return null;
   }
+}
+
+export async function validateIngredientName(
+  ingredient: string
+): Promise<IngredientValidationResult> {
+  const response = await fetchBackend('/api/ingredients/validate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ingredient }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (response.ok) {
+    return {
+      valid: true,
+      normalized: payload.normalized,
+    };
+  }
+  return {
+    valid: false,
+    reason: payload.reason || 'Input is not recognized as a valid ingredient.',
+    suggestion: payload.suggestion,
+  };
+}
+
+export async function validateIngredientEntry(
+  ingredient: string,
+  unit: string
+): Promise<IngredientValidationResult> {
+  const response = await fetchBackend('/api/ingredients/validate-entry', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ingredient, unit }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (response.ok) {
+    return {
+      valid: true,
+      normalized: payload.normalized,
+    };
+  }
+  return {
+    valid: false,
+    reason: payload.reason || 'Ingredient/unit combination is not valid.',
+    suggestion: payload.suggestion,
+  };
+}
+
+export async function suggestUnitsForIngredient(
+  ingredient: string
+): Promise<string[]> {
+  const response = await fetchBackend('/api/ingredients/suggest-units', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ingredient }),
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const units = Array.isArray(payload.units) ? payload.units : [];
+  return units.map((u) => String(u).trim().toLowerCase()).filter(Boolean);
 }
 
 /**

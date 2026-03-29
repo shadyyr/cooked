@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { suggestUnitsForIngredient, validateIngredientEntry } from './recipe-service';
 
 interface IngredientValue {
   id: string;
@@ -14,7 +15,7 @@ interface IngredientModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingIngredient?: IngredientValue | null;
-  onAddIngredient: (ingredient: IngredientValue) => void;
+  onAddIngredient: (ingredient: IngredientValue) => void | Promise<void>;
 }
 
 interface IngredientFormData {
@@ -55,6 +56,11 @@ export default function IngredientModal({
     unit: '',
   });
   const [successMessage, setSuccessMessage] = useState(false);
+  const [ingredientError, setIngredientError] = useState<string | null>(null);
+  const [unitError, setUnitError] = useState<string | null>(null);
+  const [normalizedIngredient, setNormalizedIngredient] = useState<string | null>(null);
+  const [isValidatingIngredient, setIsValidatingIngredient] = useState(false);
+  const [filteredUnits, setFilteredUnits] = useState(UNITS);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -65,10 +71,20 @@ export default function IngredientModal({
         unit: editingIngredient.unit,
       });
       setSuccessMessage(false);
+      setIngredientError(null);
+      setUnitError(null);
+      setNormalizedIngredient(null);
+      setIsValidatingIngredient(false);
+      setFilteredUnits(UNITS);
       return;
     }
     setFormData({ ingredient: '', quantity: '', unit: '' });
     setSuccessMessage(false);
+    setIngredientError(null);
+    setUnitError(null);
+    setNormalizedIngredient(null);
+    setIsValidatingIngredient(false);
+    setFilteredUnits(UNITS);
   }, [isOpen, editingIngredient]);
 
   useEffect(() => {
@@ -90,12 +106,99 @@ export default function IngredientModal({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (name === 'ingredient' && value.length > MAX_INGREDIENT_LENGTH) return;
+    if (name === 'ingredient') {
+      setIngredientError(null);
+      setUnitError(null);
+      setNormalizedIngredient(null);
+      if (!value.trim()) {
+        setFilteredUnits(UNITS);
+      }
+    }
+    if (name === 'unit') {
+      setUnitError(null);
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const validateIngredientField = async (
+    ingredientOverride?: string,
+    unitOverride?: string
+  ): Promise<boolean> => {
+    const rawIngredient = (ingredientOverride ?? formData.ingredient).trim();
+    const selectedUnit = unitOverride ?? formData.unit;
+    if (!rawIngredient) {
+      setIngredientError('Ingredient name is required.');
+      setNormalizedIngredient(null);
+      return false;
+    }
+    if (!selectedUnit) {
+      setIngredientError(null);
+      setUnitError(null);
+      return true;
+    }
+
+    setIsValidatingIngredient(true);
+    try {
+      const validation = await validateIngredientEntry(rawIngredient, selectedUnit);
+      if (!validation.valid) {
+        const suggestionText = validation.suggestion
+          ? ` Did you mean "${validation.suggestion}"?`
+          : '';
+        const message =
+          `${validation.reason || 'That does not look like a valid ingredient.'}${suggestionText}`
+        if ((validation.reason || '').toLowerCase().includes('unit')) {
+          setUnitError(message);
+          setIngredientError(null);
+        } else {
+          setIngredientError(message);
+          setUnitError(null);
+        }
+        setNormalizedIngredient(null);
+        return false;
+      }
+      setIngredientError(null);
+      setUnitError(null);
+      setNormalizedIngredient(validation.normalized || rawIngredient);
+      return true;
+    } catch (error) {
+      setIngredientError('Could not validate ingredient right now. Please try again.');
+      setUnitError(null);
+      setNormalizedIngredient(null);
+      return false;
+    } finally {
+      setIsValidatingIngredient(false);
+    }
+  };
+
+  const refreshUnitSuggestions = async (
+    ingredientOverride?: string
+  ) => {
+    const ingredient = (ingredientOverride ?? formData.ingredient).trim();
+    if (!ingredient) {
+      setFilteredUnits(UNITS);
+      return;
+    }
+    const suggestedUnits = await suggestUnitsForIngredient(ingredient);
+    if (!suggestedUnits.length) {
+      setFilteredUnits(UNITS);
+      return;
+    }
+    const nextUnits = UNITS.filter((u) => suggestedUnits.includes(u.value));
+    setFilteredUnits(nextUnits.length ? nextUnits : UNITS);
+    if (formData.unit && !suggestedUnits.includes(formData.unit)) {
+      setFormData((prev) => ({ ...prev, unit: '' }));
+      setUnitError('Please select a unit that matches this ingredient.');
+    }
   };
 
   const resetForm = () => {
     setFormData({ ingredient: '', quantity: '', unit: '' });
     setSuccessMessage(false);
+    setIngredientError(null);
+    setUnitError(null);
+    setNormalizedIngredient(null);
+    setIsValidatingIngredient(false);
+    setFilteredUnits(UNITS);
   };
 
   const handleClose = () => {
@@ -103,15 +206,23 @@ export default function IngredientModal({
     onClose();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.ingredient.trim() || !formData.quantity.trim() || !formData.unit) {
-      alert('Please fill in all fields');
+      setIngredientError('Please complete ingredient, quantity, and unit.');
+      setUnitError(null);
       return;
     }
 
-    onAddIngredient({
+    const isIngredientValid = await validateIngredientField();
+    if (!isIngredientValid) {
+      return;
+    }
+
+    const ingredientToStore = normalizedIngredient || formData.ingredient.trim();
+
+    await onAddIngredient({
       id: editingIngredient?.id || `${Date.now()}-${Math.random()}`,
-      ingredient: formData.ingredient,
+      ingredient: ingredientToStore,
       quantity: formData.quantity,
       unit: formData.unit,
     });
@@ -124,6 +235,9 @@ export default function IngredientModal({
       return;
     }
     setFormData({ ingredient: '', quantity: '', unit: '' });
+    setIngredientError(null);
+    setUnitError(null);
+    setNormalizedIngredient(null);
   };
 
   return (
@@ -197,10 +311,20 @@ export default function IngredientModal({
                       name="ingredient"
                       value={formData.ingredient}
                       onChange={handleInputChange}
+                      onBlur={() => {
+                        void refreshUnitSuggestions(formData.ingredient);
+                        void validateIngredientField(formData.ingredient, formData.unit);
+                      }}
                       placeholder="e.g., Flour, Butter, Eggs..."
                       maxLength={MAX_INGREDIENT_LENGTH}
                       className="w-full px-4 py-2 bg-slate-700 text-white border border-slate-600 rounded-lg focus:border-orange-500 focus:outline-none transition"
                     />
+                    {isValidatingIngredient && (
+                      <p className="mt-2 text-xs text-slate-300">Validating ingredient...</p>
+                    )}
+                    {!isValidatingIngredient && ingredientError && (
+                      <p className="mt-2 text-xs text-rose-300">{ingredientError}</p>
+                    )}
                   </motion.div>
 
                   <motion.div
@@ -217,7 +341,7 @@ export default function IngredientModal({
                         value={formData.quantity}
                         onChange={handleInputChange}
                         placeholder="0.5"
-                        step="0.01"
+                        step="0.5"
                         min="0"
                         className="w-full px-4 py-2 bg-slate-700 text-white border border-slate-600 rounded-lg focus:border-orange-500 focus:outline-none transition"
                       />
@@ -228,16 +352,26 @@ export default function IngredientModal({
                       <select
                         name="unit"
                         value={formData.unit}
-                        onChange={handleInputChange}
+                        onChange={async (e) => {
+                          const nextUnit = e.target.value;
+                          const currentIngredient = formData.ingredient;
+                          handleInputChange(e);
+                          if (currentIngredient.trim()) {
+                            void validateIngredientField(currentIngredient, nextUnit);
+                          }
+                        }}
                         className="w-full px-4 py-2 bg-slate-700 text-white border border-slate-600 rounded-lg focus:border-orange-500 focus:outline-none transition"
                       >
                         <option value="">Select a unit</option>
-                        {UNITS.map((unit) => (
+                        {filteredUnits.map((unit) => (
                           <option key={unit.value} value={unit.value}>
                             {unit.label}
                           </option>
                         ))}
                       </select>
+                      {unitError && (
+                        <p className="mt-2 text-xs text-rose-300">{unitError}</p>
+                      )}
                     </div>
                   </motion.div>
 
@@ -259,7 +393,13 @@ export default function IngredientModal({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={handleSave}
-                      className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition font-semibold"
+                      disabled={isValidatingIngredient || !!ingredientError || !!unitError}
+                      aria-disabled={isValidatingIngredient || !!ingredientError || !!unitError}
+                      className={`flex-1 px-4 py-2 rounded-lg transition font-semibold ${
+                        isValidatingIngredient || !!ingredientError || !!unitError
+                          ? 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                          : 'bg-orange-600 hover:bg-orange-700 text-white'
+                      }`}
                     >
                       {editingIngredient ? 'Save Changes' : 'Add Ingredient'}
                     </motion.button>

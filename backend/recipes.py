@@ -1,6 +1,83 @@
 import sys
+import re
 from ingredients import normalize_ingredient
 from quantities import is_quantity_sufficient, compute_short_by
+
+GENERIC_INGREDIENT_FAMILIES = {
+    "oil", "vinegar", "flour", "sugar", "rice", "milk", "cream", "cheese",
+    "bean", "beans", "tomato", "pasta", "bread", "pepper", "onion", "garlic",
+    "beef", "chicken", "pork", "fish", "butter",
+}
+
+MATCH_DESCRIPTOR_TOKENS = {
+    "lean", "extra", "virgin", "fresh", "dried", "minced", "chopped", "sliced",
+    "small", "medium", "large", "boneless", "skinless", "low-fat", "lowfat",
+    "reduced-fat", "reduced", "organic", "raw", "cooked", "fat-free",
+}
+
+
+def _canonicalize_for_matching(ingredient_name):
+    normalized = normalize_ingredient(ingredient_name or "")
+    normalized = re.sub(r"[^a-z0-9\s/\-']", " ", normalized).strip()
+    tokens = [t for t in normalized.split() if t]
+    cleaned = []
+    for token in tokens:
+        if re.fullmatch(r"\d+\s*/\s*\d+", token):
+            continue
+        if token in MATCH_DESCRIPTOR_TOKENS:
+            continue
+        cleaned.append(token)
+    return " ".join(cleaned).strip()
+
+
+def _match_score(recipe_ingredient, pantry_ingredient):
+    recipe_norm = normalize_ingredient(recipe_ingredient)
+    pantry_norm = normalize_ingredient(pantry_ingredient)
+    recipe_canon = _canonicalize_for_matching(recipe_norm)
+    pantry_canon = _canonicalize_for_matching(pantry_norm)
+
+    if pantry_norm == recipe_norm:
+        return 100
+    if recipe_canon and pantry_canon and pantry_canon == recipe_canon:
+        return 90
+
+    if pantry_norm.endswith(f" {recipe_norm}"):
+        return 85
+    if recipe_canon and pantry_canon and pantry_canon.endswith(f" {recipe_canon}"):
+        return 80
+
+    # One-way generic family matching:
+    # recipe asks generic ingredient, pantry provides a specific variant.
+    if recipe_norm in GENERIC_INGREDIENT_FAMILIES:
+        haystack_norm = f" {pantry_norm} "
+        needle_norm = f" {recipe_norm} "
+        if needle_norm in haystack_norm:
+            return 70
+        if recipe_canon and pantry_canon:
+            haystack_canon = f" {pantry_canon} "
+            needle_canon = f" {recipe_canon} "
+            if needle_canon in haystack_canon:
+                return 65
+
+    return 0
+
+
+def _find_best_matching_pantry_key(pantry, recipe_ingredient):
+    candidates = []
+    for pantry_key in pantry.keys():
+        score = _match_score(recipe_ingredient, pantry_key)
+        if score > 0:
+            # Prefer better score, then fewer extra words, then deterministic alpha order.
+            recipe_word_count = len(normalize_ingredient(recipe_ingredient).split())
+            pantry_word_count = len(normalize_ingredient(pantry_key).split())
+            extra_words = max(0, pantry_word_count - recipe_word_count)
+            candidates.append((score, -extra_words, pantry_key))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    return candidates[0][2]
+
 
 def get_exact_pantry_quantity_for_recipe_ingredient(pantry, recipe_ingredient):
     """
@@ -8,7 +85,10 @@ def get_exact_pantry_quantity_for_recipe_ingredient(pantry, recipe_ingredient):
     Example: pantry 'butter' must NOT satisfy recipe 'unsalted butter'.
     """
     normalized_recipe_ingredient = normalize_ingredient(recipe_ingredient)
-    return pantry.get(normalized_recipe_ingredient)
+    best_key = _find_best_matching_pantry_key(pantry, normalized_recipe_ingredient)
+    if best_key is None:
+        return None
+    return pantry.get(best_key)
 
 
 def can_make_recipe(pantry, recipe_requirements):

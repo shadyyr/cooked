@@ -7,8 +7,8 @@ from flask import Flask, jsonify, make_response, request
 from api import fetch_mealdb_recipes, get_meal_metadata_by_name
 from config import API_RESULT_LIMIT, MIN_MATCH_SCORE
 from fallbacks import FALLBACK_RECIPES
-from ingredients import normalize_ingredient
-from quantities import combine_quantities
+from ingredients import normalize_ingredient, validate_ingredient_for_api
+from quantities import combine_quantities, validate_unit_for_ingredient, suggest_units_for_ingredient
 from recipes import suggest_recipes
 
 
@@ -51,18 +51,53 @@ def parse_pantry_from_payload(payload):
     """
     ingredients = payload.get("ingredients") or []
     pantry = {}
+    invalid_ingredients = []
 
     for item in ingredients:
         if isinstance(item, str):
-            name = normalize_ingredient(item)
+            raw_name = str(item).strip()
+            if not raw_name:
+                continue
+            validation = validate_ingredient_for_api(raw_name, FALLBACK_RECIPES)
+            if not validation.get("valid"):
+                invalid_ingredients.append(
+                    {
+                        "ingredient": raw_name,
+                        "reason": validation.get("reason"),
+                        "suggestion": validation.get("suggestion"),
+                    }
+                )
+                continue
+            name = validation.get("normalized") or normalize_ingredient(raw_name)
             qty = "1 piece"
         elif isinstance(item, dict):
             raw_name = str(item.get("ingredient", "")).strip()
             if not raw_name:
                 continue
-            name = normalize_ingredient(raw_name)
+            validation = validate_ingredient_for_api(raw_name, FALLBACK_RECIPES)
+            if not validation.get("valid"):
+                invalid_ingredients.append(
+                    {
+                        "ingredient": raw_name,
+                        "reason": validation.get("reason"),
+                        "suggestion": validation.get("suggestion"),
+                    }
+                )
+                continue
+            name = validation.get("normalized") or normalize_ingredient(raw_name)
             raw_qty = str(item.get("quantity", "")).strip()
             raw_unit = str(item.get("unit", "")).strip()
+            if raw_unit:
+                unit_valid, unit_reason, unit_suggestion = validate_unit_for_ingredient(raw_name, raw_unit)
+                if not unit_valid:
+                    invalid_ingredients.append(
+                        {
+                            "ingredient": raw_name,
+                            "reason": unit_reason,
+                            "suggestion": unit_suggestion,
+                        }
+                    )
+                    continue
             if raw_qty:
                 qty = f"{raw_qty} {raw_unit}".strip()
             else:
@@ -79,7 +114,7 @@ def parse_pantry_from_payload(payload):
         else:
             pantry[name] = qty
 
-    return pantry
+    return pantry, invalid_ingredients
 
 
 def split_recipe_requirements_and_meta(recipe_data):
@@ -156,7 +191,18 @@ def search_recipes():
     except (TypeError, ValueError):
         min_score = MIN_MATCH_SCORE
 
-    pantry = parse_pantry_from_payload(payload)
+    pantry, invalid_ingredients = parse_pantry_from_payload(payload)
+    if invalid_ingredients:
+        return (
+            jsonify(
+                {
+                    "error": "invalid_ingredient_input",
+                    "message": "One or more inputs are not valid ingredients.",
+                    "invalid_ingredients": invalid_ingredients,
+                }
+            ),
+            400,
+        )
     if not pantry:
         fallback_limit = len(FALLBACK_RECIPES) if limit_raw is None else limit
         fallback_names = list(FALLBACK_RECIPES.keys())[:fallback_limit]
@@ -217,6 +263,119 @@ def search_recipes():
             },
         }
     )
+
+
+@app.route("/api/ingredients/validate", methods=["POST", "OPTIONS"])
+def validate_ingredient():
+    if request.method == "OPTIONS":
+        return with_cors(make_response("", 204))
+
+    payload = request.get_json(silent=True) or {}
+    raw_ingredient = str(payload.get("ingredient", "")).strip()
+    if not raw_ingredient:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "reason": "Ingredient cannot be empty.",
+                    "suggestion": None,
+                }
+            ),
+            400,
+        )
+
+    result = validate_ingredient_for_api(raw_ingredient, FALLBACK_RECIPES)
+    if result.get("valid"):
+        return jsonify(
+            {
+                "valid": True,
+                "normalized": result.get("normalized"),
+                "reason": None,
+                "suggestion": None,
+            }
+        )
+
+    return (
+        jsonify(
+            {
+                "valid": False,
+                "reason": result.get("reason"),
+                "suggestion": result.get("suggestion"),
+            }
+        ),
+        400,
+    )
+
+
+@app.route("/api/ingredients/validate-entry", methods=["POST", "OPTIONS"])
+def validate_ingredient_entry():
+    if request.method == "OPTIONS":
+        return with_cors(make_response("", 204))
+
+    payload = request.get_json(silent=True) or {}
+    raw_ingredient = str(payload.get("ingredient", "")).strip()
+    raw_unit = str(payload.get("unit", "")).strip()
+    if not raw_ingredient:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "reason": "Ingredient cannot be empty.",
+                    "suggestion": None,
+                }
+            ),
+            400,
+        )
+
+    ingredient_result = validate_ingredient_for_api(raw_ingredient, FALLBACK_RECIPES)
+    if not ingredient_result.get("valid"):
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "reason": ingredient_result.get("reason"),
+                    "suggestion": ingredient_result.get("suggestion"),
+                }
+            ),
+            400,
+        )
+
+    if raw_unit:
+        unit_valid, unit_reason, unit_suggestion = validate_unit_for_ingredient(raw_ingredient, raw_unit)
+        if not unit_valid:
+            return (
+                jsonify(
+                    {
+                        "valid": False,
+                        "reason": unit_reason,
+                        "suggestion": unit_suggestion,
+                    }
+                ),
+                400,
+            )
+
+    return jsonify(
+        {
+            "valid": True,
+            "normalized": ingredient_result.get("normalized"),
+            "reason": None,
+            "suggestion": None,
+        }
+    )
+
+
+@app.route("/api/ingredients/suggest-units", methods=["POST", "OPTIONS"])
+def suggest_units():
+    if request.method == "OPTIONS":
+        return with_cors(make_response("", 204))
+
+    payload = request.get_json(silent=True) or {}
+    raw_ingredient = str(payload.get("ingredient", "")).strip()
+    if not raw_ingredient:
+        return jsonify({"units": []})
+
+    units = suggest_units_for_ingredient(raw_ingredient)
+    return jsonify({"units": units})
 
 
 @app.route("/api/recipes/<recipe_id>", methods=["GET", "OPTIONS"])

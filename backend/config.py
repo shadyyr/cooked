@@ -1,3 +1,13 @@
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, assuming env vars are set manually
+    pass
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
 # API settings
 API_RESULT_LIMIT = 12
 

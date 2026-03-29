@@ -1,13 +1,14 @@
 import re
 from quantities import find_best_text_match
+from gemini_utils import validate_ingredient_with_gemini
 
 CURATED_COMMON_INGREDIENTS = {
     "salt", "pepper", "sugar", "flour", "rice", "pasta", "bread", "egg", "milk", "butter",
-    "cheese", "tomato", "onion", "garlic", "potato", "chicken", "beef", "pork", "fish",
+    "cheese", "tomato", "onion", "garlic", "potato", "chicken", "beef", "pork", "fish", "oil",
     "olive oil", "vegetable oil", "vinegar", "soy sauce", "lemon", "lime", "carrot",
     "broccoli", "mushroom", "spinach", "lettuce", "cucumber", "basil", "oregano", "thyme",
     "paprika", "cumin", "chili", "ginger", "bean", "lentil", "corn", "apple", "banana",
-    "strawberry", "blueberry", "yogurt", "cream", "canned tomato"
+    "strawberry", "blueberry", "yogurt", "cream", "canned tomato", "avocado oil"
 }
 
 API_SEEN_INGREDIENTS = set()
@@ -73,8 +74,8 @@ def is_valid_ingredient(ingredient):
     if not re.search(r"[a-zA-Z]", ingredient):
         return False
 
-    # allow letters, spaces, hyphens, apostrophes
-    if not re.fullmatch(r"[a-zA-Z\s\-']+", ingredient):
+    # allow letters, digits, spaces, hyphens, apostrophes, and slash for ratio-style names
+    if not re.fullmatch(r"[a-zA-Z0-9\s\-'/]+", ingredient):
         return False
 
     return True
@@ -89,10 +90,15 @@ def ingredient_syntax_reason(ingredient):
         return False, "Ingredient is too long. Keep it under 40 characters."
     if not re.search(r"[a-zA-Z]", lowered):
         return False, "Ingredient must contain letters."
-    if "\\" in text or "/" in text or ":" in text:
+    # Detect common path-like patterns, but allow ratio-like ingredient tokens (e.g. "95/5 beef")
+    looks_like_windows_path = bool(re.match(r"^[a-zA-Z]:[\\/]", text))
+    looks_like_unix_abs_path = text.startswith("/")
+    looks_like_url = bool(re.match(r"^[a-zA-Z]+://", text))
+    looks_like_relative_path = bool(re.search(r"[\\/]", text) and re.search(r"\.[a-zA-Z0-9]{1,5}$", text))
+    if looks_like_windows_path or looks_like_unix_abs_path or looks_like_url or looks_like_relative_path:
         return False, "This looks like a file path, not an ingredient."
-    if not re.fullmatch(r"[a-zA-Z\s\-']+", lowered):
-        return False, "Use only letters, spaces, hyphens, or apostrophes."
+    if not re.fullmatch(r"[a-zA-Z0-9\s\-'/]+", lowered):
+        return False, "Use letters, numbers, spaces, hyphens, apostrophes, or slash for ratios."
     return True, None
 
 def get_ingredient_vocabulary(fallback_recipes):
@@ -190,6 +196,46 @@ def assess_ingredient_confidence(ingredient_text, fallback_recipes):
     suggestion = suggest_ingredient_correction(normalized, fallback_recipes)
     in_vocab = normalized in vocabulary
 
+    curated_vocab = {normalize_ingredient(x) for x in CURATED_COMMON_INGREDIENTS}
+    if normalized in curated_vocab:
+        in_vocab = True
+        score = max(score, VALID_SCORE_THRESHOLD + 0.1)
+
+    # Heuristic for reasonable compound ingredients:
+    # examples: "avocado oil", "garlic powder", "tomato sauce"
+    tokens = [t for t in normalized.split() if t]
+    if len(tokens) >= 2:
+        head = tokens[-1]
+        common_heads = {
+            "oil", "powder", "sauce", "paste", "vinegar", "salt", "sugar", "flour",
+            "milk", "cream", "butter", "cheese", "pepper", "juice", "stock", "broth",
+        }
+        if head in common_heads or head in vocabulary:
+            in_vocab = True
+            score = max(score, VALID_SCORE_THRESHOLD + 0.05)
+
+    # Gemini assist for any non-confident ingredient:
+    # - hard failures
+    # - moderate/suspicious confidence cases
+    if not (in_vocab and score >= VALID_SCORE_THRESHOLD):
+        ai_check = validate_ingredient_with_gemini(normalized)
+        if ai_check is not None:
+            if ai_check.get("is_valid"):
+                in_vocab = True
+                score = max(score, VALID_SCORE_THRESHOLD + 0.05)
+            else:
+                ai_reason = ai_check.get("reason") or (
+                    f"'{normalized}' is not recognized as a cooking ingredient."
+                )
+                return {
+                    "status": "invalid",
+                    "normalized": None,
+                    "reason": ai_reason,
+                    "suggestion": suggestion if suggestion != normalized else None,
+                    "confidence_score": score,
+                    "signals": signals,
+                }
+
     if in_vocab and score >= VALID_SCORE_THRESHOLD:
         return {
             "status": "valid",
@@ -271,3 +317,64 @@ def resolve_ingredient_input_with_guidance(raw_ingredient, fallback_recipes, pro
         ingredient = input(f"{prompt_label}: ").strip().lower()
         if ingredient == "done":
             return "done", "done"
+
+
+def validate_ingredient_for_api(raw_ingredient, fallback_recipes):
+    """
+    Strict validation for API requests:
+    - uses existing layered logic first
+    - if uncertain (suspicious), asks Gemini as final judge
+    """
+    assessment = assess_ingredient_confidence(raw_ingredient, fallback_recipes)
+    status = assessment.get("status")
+
+    if status == "valid":
+        return {
+            "valid": True,
+            "normalized": assessment.get("normalized"),
+            "reason": None,
+            "suggestion": None,
+            "confidence_score": assessment.get("confidence_score"),
+        }
+
+    if status == "invalid":
+        return {
+            "valid": False,
+            "normalized": None,
+            "reason": assessment.get("reason") or "Input is not a valid ingredient.",
+            "suggestion": assessment.get("suggestion"),
+            "confidence_score": assessment.get("confidence_score"),
+        }
+
+    # Suspicious path -> Gemini fallback
+    normalized = assessment.get("normalized") or normalize_ingredient(raw_ingredient)
+    ai_check = validate_ingredient_with_gemini(normalized)
+    if ai_check is not None:
+        if ai_check.get("is_valid"):
+            return {
+                "valid": True,
+                "normalized": normalized,
+                "reason": None,
+                "suggestion": None,
+                "confidence_score": 0.45,
+            }
+        ai_reason = ai_check.get("reason") or "Gemini did not recognize this as a cooking ingredient."
+        return {
+            "valid": False,
+            "normalized": None,
+            "reason": ai_reason,
+            "suggestion": assessment.get("suggestion"),
+            "confidence_score": assessment.get("confidence_score"),
+        }
+
+    # Gemini unavailable: reject uncertain input rather than silently accepting non-ingredients.
+    return {
+        "valid": False,
+        "normalized": None,
+        "reason": (
+            assessment.get("reason")
+            or "Ingredient could not be confidently validated."
+        ),
+        "suggestion": assessment.get("suggestion"),
+        "confidence_score": assessment.get("confidence_score"),
+    }

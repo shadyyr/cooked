@@ -1,5 +1,10 @@
 import re
 import difflib
+from gemini_utils import (
+    convert_units_with_gemini,
+    validate_ingredient_unit_with_gemini,
+    suggest_units_for_ingredient_with_gemini,
+)
 
 UNIT_MAP = {
     "cups": "cup",
@@ -61,6 +66,28 @@ UNIT_CONVERSIONS_TO_BASE = {
     "piece": ("count", 1.0),
     "can": ("count", 1.0),
 }
+
+BULK_INGREDIENT_KEYWORDS = {
+    "rice", "flour", "sugar", "salt", "pepper", "spice", "powder", "oat", "lentil", "bean",
+    "beans", "quinoa", "breadcrumbs", "crumb", "pasta", "couscous",
+}
+
+LIQUID_INGREDIENT_KEYWORDS = {
+    "oil", "milk", "water", "vinegar", "broth", "stock", "juice", "sauce", "syrup", "cream",
+}
+
+COUNT_LIKE_UNITS = {"slice", "clove", "stick", "piece", "can"}
+ALL_VALID_UNITS = sorted(set(UNIT_MAP.values()))
+
+COUNTABLE_INGREDIENT_KEYWORDS = {
+    "egg", "onion", "garlic", "potato", "tomato", "apple", "banana", "pepper",
+    "mushroom", "carrot", "cucumber", "bread", "cheese", "lettuce", "lime", "lemon",
+}
+
+CLOVE_INGREDIENT_KEYWORDS = {"garlic"}
+SLICE_INGREDIENT_KEYWORDS = {"bread", "cheese"}
+STICK_INGREDIENT_KEYWORDS = {"butter"}
+CAN_INGREDIENT_KEYWORDS = {"canned", "bean", "beans", "tomato", "tuna", "corn"}
 
 def parse_quantity(quantity_input):
     """
@@ -169,19 +196,126 @@ def validate_quantity_input(quantity_input):
     return True, None
 
 
-def convert_amount_between_units(amount, from_unit, to_unit):
+def validate_unit_for_ingredient(ingredient_name, unit_text):
+    """
+    Validates whether the chosen unit is plausible for the ingredient.
+    Uses deterministic checks first, then Gemini fallback for uncertain cases.
+    """
+    ingredient = str(ingredient_name or "").strip().lower()
+    unit = UNIT_MAP.get(str(unit_text or "").strip().lower(), str(unit_text or "").strip().lower())
+
+    if not unit:
+        return False, "Measurement unit is required.", None
+
+    if unit not in set(UNIT_MAP.values()):
+        suggestion = suggest_unit_correction(unit)
+        if suggestion:
+            return False, f"Invalid unit '{unit}'. Did you mean '{suggestion}'?", suggestion
+        return False, f"Invalid unit '{unit}'.", None
+
+    # deterministic obvious mismatches
+    if any(k in ingredient for k in BULK_INGREDIENT_KEYWORDS) and unit in {"slice", "clove", "stick"}:
+        return (
+            False,
+            f"'{unit}' is not a reasonable unit for '{ingredient_name}'.",
+            "cup",
+        )
+
+    if any(k in ingredient for k in LIQUID_INGREDIENT_KEYWORDS) and unit in {"slice", "clove", "stick"}:
+        return (
+            False,
+            f"'{unit}' is not a reasonable unit for '{ingredient_name}'.",
+            "tbsp",
+        )
+
+    # ingredient-specific sanity checks
+    if "garlic" in ingredient and unit in {"slice", "stick"}:
+        return False, f"'{unit}' is not a reasonable unit for '{ingredient_name}'.", "clove"
+    if "egg" in ingredient and unit in {"slice", "clove", "stick", "can"}:
+        return False, f"'{unit}' is not a reasonable unit for '{ingredient_name}'.", "piece"
+
+    # Already clearly acceptable
+    if any(k in ingredient for k in BULK_INGREDIENT_KEYWORDS) and unit in {"g", "kg", "oz", "lb", "cup", "tbsp", "tsp", "ml", "l"}:
+        return True, None, None
+    if any(k in ingredient for k in LIQUID_INGREDIENT_KEYWORDS) and unit in {"ml", "l", "tsp", "tbsp", "cup", "oz", "lb", "g", "kg"}:
+        return True, None, None
+    if unit == "clove" and any(k in ingredient for k in CLOVE_INGREDIENT_KEYWORDS):
+        return True, None, None
+    if unit == "slice" and any(k in ingredient for k in SLICE_INGREDIENT_KEYWORDS):
+        return True, None, None
+    if unit == "stick" and any(k in ingredient for k in STICK_INGREDIENT_KEYWORDS):
+        return True, None, None
+    if unit == "can" and any(k in ingredient for k in CAN_INGREDIENT_KEYWORDS):
+        return True, None, None
+    if unit == "piece":
+        return True, None, None
+
+    # Gemini fallback for uncertain cases
+    ai_check = validate_ingredient_unit_with_gemini(ingredient_name, unit)
+    if ai_check is None:
+        return True, None, None
+
+    if ai_check.get("is_valid"):
+        return True, None, None
+
+    suggested_units = ai_check.get("suggested_units") or []
+    suggestion = suggested_units[0] if suggested_units else None
+    reason = ai_check.get("reason") or f"'{unit}' is not a reasonable unit for '{ingredient_name}'."
+    return False, reason, suggestion
+
+
+def suggest_units_for_ingredient(ingredient_name):
+    """
+    Suggest likely units for an ingredient using heuristics first, Gemini second.
+    Returns canonical unit values from UNIT_MAP.
+    """
+    ingredient = str(ingredient_name or "").strip().lower()
+    if not ingredient:
+        return ALL_VALID_UNITS
+
+    suggested = set()
+
+    if any(k in ingredient for k in BULK_INGREDIENT_KEYWORDS):
+        suggested.update({"g", "kg", "oz", "lb", "cup", "tbsp", "tsp"})
+    if any(k in ingredient for k in LIQUID_INGREDIENT_KEYWORDS):
+        suggested.update({"ml", "l", "cup", "tbsp", "tsp", "oz"})
+    if any(k in ingredient for k in COUNTABLE_INGREDIENT_KEYWORDS):
+        suggested.add("piece")
+    if any(k in ingredient for k in CLOVE_INGREDIENT_KEYWORDS):
+        suggested.add("clove")
+    if any(k in ingredient for k in SLICE_INGREDIENT_KEYWORDS):
+        suggested.add("slice")
+    if any(k in ingredient for k in STICK_INGREDIENT_KEYWORDS):
+        suggested.add("stick")
+    if any(k in ingredient for k in CAN_INGREDIENT_KEYWORDS):
+        suggested.add("can")
+    if any(k in ingredient for k in {"beef", "chicken", "pork", "fish"}):
+        suggested.update({"g", "kg", "oz", "lb", "piece"})
+
+    gemini_units = suggest_units_for_ingredient_with_gemini(ingredient_name, ALL_VALID_UNITS)
+    if gemini_units:
+        suggested.update(u for u in gemini_units if u in set(ALL_VALID_UNITS))
+
+    if not suggested:
+        return ALL_VALID_UNITS
+
+    ordered = [u for u in ALL_VALID_UNITS if u in suggested]
+    return ordered if ordered else ALL_VALID_UNITS
+
+
+def convert_amount_between_units(amount, from_unit, to_unit, ingredient_name=None):
     if from_unit == to_unit:
         return amount
     if from_unit not in UNIT_CONVERSIONS_TO_BASE or to_unit not in UNIT_CONVERSIONS_TO_BASE:
-        return None
+        return convert_units_with_gemini(amount, from_unit, to_unit, ingredient_name)
 
     from_dim, from_factor = UNIT_CONVERSIONS_TO_BASE[from_unit]
     to_dim, to_factor = UNIT_CONVERSIONS_TO_BASE[to_unit]
     if from_dim != to_dim:
-        return None
+        return convert_units_with_gemini(amount, from_unit, to_unit, ingredient_name)
     if from_dim == "count":
         # Do not convert different count-like units (e.g., clove -> slice).
-        return None
+        return convert_units_with_gemini(amount, from_unit, to_unit, ingredient_name)
 
     amount_in_base = amount * from_factor
     return amount_in_base / to_factor
