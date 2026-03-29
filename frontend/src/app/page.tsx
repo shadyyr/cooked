@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Recipe } from './recipe';
 import {
   getRecipes,
-  searchRecipes,
   getRecipeById,
   fetchRecipesByIngredients,
 } from './recipe-service';
@@ -42,7 +41,6 @@ interface AddedIngredient {
 export default function RecipesLanding() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,6 +51,7 @@ export default function RecipesLanding() {
   const [addedIngredients, setAddedIngredients] = useState<AddedIngredient[]>([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false);
   const [editingIngredient, setEditingIngredient] = useState<AddedIngredient | null>(null);
+  const latestRecipeRequestId = useRef(0);
 
   // Auth + favorites
   const [user, setUser] = useState<User | null>(null);
@@ -160,7 +159,7 @@ export default function RecipesLanding() {
 
   const toggleFavorite = async (recipe: Recipe) => {
     if (!user) {
-      await signInWithGoogle();
+      console.log('Favorite action ignored: user must be signed in.');
       return;
     }
 
@@ -206,20 +205,37 @@ export default function RecipesLanding() {
     setIsIngredientModalOpen(true);
   };
 
+  const runRecipeRequest = async (loader: () => Promise<Recipe[]>) => {
+    const requestId = ++latestRecipeRequestId.current;
+    setIsLoadingRecipes(true);
+
+    try {
+      const nextRecipes = await loader();
+      if (requestId !== latestRecipeRequestId.current) {
+        return null;
+      }
+      setRecipes(nextRecipes);
+      return nextRecipes;
+    } catch (error) {
+      if (requestId === latestRecipeRequestId.current) {
+        console.error('Failed to update recipes:', error);
+      }
+      return null;
+    } finally {
+      if (requestId === latestRecipeRequestId.current) {
+        setIsLoadingRecipes(false);
+      }
+    }
+  };
+
   // Fetch recipes based on current added ingredients
   const fetchUpdatedRecipes = async (ingredients: AddedIngredient[]) => {
-    try {
-      setIsLoadingRecipes(true);
-      console.log(`Fetching recipes for ${ingredients.length} ingredients...`);
-      
-      const updatedRecipes = await fetchRecipesByIngredients(ingredients);
-      setRecipes(updatedRecipes);
-      
+    console.log(`Fetching recipes for ${ingredients.length} ingredients...`);
+    const updatedRecipes = await runRecipeRequest(() =>
+      fetchRecipesByIngredients(ingredients)
+    );
+    if (updatedRecipes) {
       console.log(`Updated recipe list with ${updatedRecipes.length} recipes`);
-    } catch (error) {
-      console.error('Failed to fetch updated recipes:', error);
-    } finally {
-      setIsLoadingRecipes(false);
     }
   };
 
@@ -234,8 +250,10 @@ export default function RecipesLanding() {
     
     if (updatedIngredients.length === 0) {
       // If no ingredients left, load fallback recipes
-      const data = await getRecipes();
-      setRecipes(data);
+      const data = await runRecipeRequest(() => getRecipes());
+      if (data) {
+        console.log(`Reset to default recipe list with ${data.length} recipes`);
+      }
     } else {
       await fetchUpdatedRecipes(updatedIngredients);
     }
@@ -244,16 +262,12 @@ export default function RecipesLanding() {
   const filteredRecipes = useMemo(() => {
     let results = recipes;
 
-    if (searchQuery) {
-      results = searchRecipes(results, searchQuery);
-    }
-
     if (showFavoritesOnly) {
       results = results.filter((recipe) => favoriteRecipeIds.has(recipe.id));
     }
 
     return results;
-  }, [recipes, searchQuery, showFavoritesOnly, favoriteRecipeIds]);
+  }, [recipes, showFavoritesOnly, favoriteRecipeIds]);
 
   const CARD_EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -300,7 +314,6 @@ export default function RecipesLanding() {
           <Link
             href="/"
             onClick={() => {
-              setSearchQuery('');
               setShowFavoritesOnly(false);
               setAddedIngredients([]);
             }}
@@ -317,18 +330,18 @@ export default function RecipesLanding() {
           </Link>
 
           <div className="flex gap-4 items-center">
-            <button
-              onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-              className={`px-4 py-2 rounded-lg border font-semibold transition ${
-                showFavoritesOnly
-                  ? 'bg-blue-500/80 border-blue-400 text-white'
-                  : 'bg-slate-700/70 border-slate-600 text-slate-100 hover:bg-slate-600/70'
-              }`}
-            >
-              My Recipes
-            </button>
             {user ? (
               <>
+                <button
+                  onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                  className={`px-4 py-2 rounded-lg border font-semibold transition ${
+                    showFavoritesOnly
+                      ? 'bg-blue-500/80 border-blue-400 text-white'
+                      : 'bg-slate-700/70 border-slate-600 text-slate-100 hover:bg-slate-600/70'
+                  }`}
+                >
+                  My Recipes
+                </button>
                 <span className="text-sm text-slate-200 hidden md:inline-flex">{user.displayName}</span>
                 <button
                   onClick={signOutUser}
@@ -349,67 +362,57 @@ export default function RecipesLanding() {
         </div>
       </motion.nav>
 
-      {/* Top Search + Ingredient controls (screenshot style) */}
+      {/* Ingredients Panel */}
       <section className="pt-24 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-900/50 border border-slate-700/60 rounded-2xl p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
-          <div className="w-full">
-            <input
-              type="text"
-              placeholder="Search recipes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-14 px-5 rounded-xl bg-slate-800/80 border border-slate-700 text-lg text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
+        <div className="max-w-7xl mx-auto rounded-2xl border border-slate-700/60 bg-slate-900/55 p-6 md:p-8 shadow-2xl shadow-black/30 backdrop-blur-xl">
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-slate-100">Your Ingredients</h2>
+          <p className="mt-1.5 text-lg md:text-xl text-slate-400">Add the ingredients you have on hand and we'll find the perfect recipes for you.</p>
+
           <button
             onClick={() => {
               setEditingIngredient(null);
               setIsIngredientModalOpen(true);
             }}
-            className="w-full md:w-auto h-14 px-7 bg-orange-500 hover:bg-orange-400 text-white font-bold rounded-xl shadow-lg shadow-orange-500/25 transition flex items-center justify-center whitespace-nowrap"
+            className="mt-5 inline-flex items-center gap-2.5 rounded-xl border border-slate-700 bg-slate-950/70 px-5 py-2.5 text-xl font-semibold text-slate-300 transition hover:border-orange-300/50 hover:bg-orange-300/20 hover:text-orange-100"
           >
-            + Add Ingredient
+            <span className="text-2xl leading-none">+</span>
+            <span>Add Ingredient</span>
           </button>
-        </div>
 
-        {addedIngredients.length > 0 && (
-          <div className="max-w-7xl mx-auto">
+          {addedIngredients.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: CARD_EASE }}
-              className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-xl"
+              className="mt-5 flex flex-wrap gap-3"
             >
-              <p className="text-sm text-slate-300 mb-2 font-semibold">Selected Ingredients</p>
-              <div className="flex flex-wrap gap-3">
-                {addedIngredients.map((ingredient) => (
-                  <motion.div
-                    key={ingredient.id}
-                    initial={{ opacity: 0, scale: 0.96, y: 4 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    transition={{ duration: 0.2, ease: CARD_EASE }}
-                    className="group inline-flex items-center rounded-full border border-slate-600 bg-slate-800/90 text-sm text-slate-100 shadow-sm shadow-black/25"
+              {addedIngredients.map((ingredient) => (
+                <motion.div
+                  key={ingredient.id}
+                  initial={{ opacity: 0, scale: 0.96, y: 4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: CARD_EASE }}
+                  className="group inline-flex items-center rounded-2xl border border-orange-400/45 bg-orange-700/20 text-orange-200 shadow-sm shadow-black/20 transition hover:bg-orange-700/12 hover:text-orange-100"
+                >
+                  <button
+                    onClick={() => handleEditIngredient(ingredient)}
+                    className="px-4 py-2 text-lg font-semibold"
+                    title="Edit ingredient"
                   >
-                    <button
-                      onClick={() => handleEditIngredient(ingredient)}
-                      className="px-3 py-2 font-medium hover:text-orange-200 transition"
-                      title="Edit ingredient"
-                    >
-                      {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
-                    </button>
-                    <button
-                      onClick={() => handleRemoveIngredient(ingredient.id)}
-                      className="border-l border-slate-600 px-2 py-2 text-slate-400 transition hover:bg-slate-700 hover:text-slate-100 rounded-r-full"
-                      aria-label="Remove ingredient"
-                    >
-                      x
-                    </button>
-                  </motion.div>
-                ))}
-              </div>
+                    {ingredient.quantity} {ingredient.unit} {ingredient.ingredient}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveIngredient(ingredient.id)}
+                    className="rounded-r-2xl border-l border-orange-400/35 px-3 py-2 text-orange-300 transition hover:bg-orange-500/20 hover:text-orange-100"
+                    aria-label="Remove ingredient"
+                  >
+                    x
+                  </button>
+                </motion.div>
+              ))}
             </motion.div>
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
       {/* Search Section (simpler now) */}
@@ -488,28 +491,29 @@ export default function RecipesLanding() {
                         alt={recipe.title}
                         className="w-full h-full object-cover"
                       />
-
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2 }}
-                        className="absolute top-3 left-3 flex items-center gap-2"
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(recipe);
-                          }}
-                          className={`text-4xl leading-none transition ${
-                            favoriteRecipeIds.has(recipe.id)
-                              ? 'text-yellow-400 drop-shadow-lg'
-                              : 'text-gray-300 hover:text-yellow-300'
-                          }`}
-                          aria-label={favoriteRecipeIds.has(recipe.id) ? 'Unfavorite' : 'Favorite'}
+                      {user && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: 0.2 }}
+                          className="absolute top-3 left-3 flex items-center gap-2"
                         >
-                          {favoriteRecipeIds.has(recipe.id) ? '★' : '☆'}
-                        </button>
-                      </motion.div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(recipe);
+                            }}
+                            className={`text-4xl leading-none transition ${
+                              favoriteRecipeIds.has(recipe.id)
+                                ? 'text-yellow-400 drop-shadow-lg'
+                                : 'text-gray-300 hover:text-yellow-300'
+                            }`}
+                            aria-label={favoriteRecipeIds.has(recipe.id) ? 'Unfavorite' : 'Favorite'}
+                          >
+                            {favoriteRecipeIds.has(recipe.id) ? '\u2605' : '\u2606'}
+                          </button>
+                        </motion.div>
+                      )}
 
                       <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
@@ -602,4 +606,5 @@ export default function RecipesLanding() {
     </div>
   );
 }
+
 
